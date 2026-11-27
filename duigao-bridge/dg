@@ -1,0 +1,503 @@
+#!/usr/bin/env python3
+"""dg — drive 對稿 from the command line.
+
+對稿 keeps each transcript in a txt file beside the video:
+
+    [114.0-114.6] 啊
+
+This program reads and writes that same file. Playback stays in the 對稿 window.
+See API.md.
+"""
+import argparse
+import importlib.util
+import json
+import os
+import sys
+
+LIB = None
+APP = None
+
+
+def emit(result):
+    print(json.dumps({"ok": True, "result": result}, ensure_ascii=False))
+
+
+def fail(message, result=None):
+    body = {"ok": False, "error": str(message)}
+    if result is not None:
+        body["result"] = result
+    print(json.dumps(body, ensure_ascii=False))
+    raise SystemExit(1)
+
+
+def find_app():
+    env = os.environ.get("DUIGAO_PY")
+    if env:
+        if os.path.isfile(env):
+            return env
+        fail("DUIGAO_PY is not a file: %s" % env)
+    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+    found = []
+    skip = {"fw-turbo", "stable_whisper", "node_modules", ".git", "__pycache__"}
+    for dirpath, dirnames, filenames in os.walk(desktop):
+        rel = os.path.relpath(dirpath, desktop)
+        depth = 0 if rel == "." else rel.count(os.sep) + 1
+        if depth > 3:
+            dirnames[:] = []
+            continue
+        dirnames[:] = [name for name in dirnames if name not in skip]
+        if "對稿.py" in filenames:
+            found.append(os.path.join(dirpath, "對稿.py"))
+    for path in found:
+        model = os.path.join(os.path.dirname(path), "fw-turbo", "model.bin")
+        if os.path.isfile(model):
+            return path
+    if found:
+        return found[0]
+    fail("找不到對稿.py。把 DUIGAO_PY 指到那支程式。")
+
+
+def library():
+    global LIB, APP
+    if LIB is not None:
+        return LIB
+    APP = find_app()
+    spec = importlib.util.spec_from_file_location("duigao_app", APP)
+    if spec is None or spec.loader is None:
+        fail("讀不到對稿.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    LIB = module
+    return module
+
+
+def line_json(index, line):
+    return {"index": index, "start": line.start, "end": line.end, "text": line.text}
+
+
+class Doc:
+    def __init__(self, source, media, txt, lines):
+        self.source = source
+        self.media = media
+        self.txt = txt
+        self.lines = lines
+
+
+def sibling_media(path):
+    lib = library()
+    stem, _ext = os.path.splitext(path)
+    for ext in lib.MEDIA_EXTENSIONS:
+        candidate = stem + ext
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def load(path):
+    lib = library()
+    path = os.path.abspath(path)
+    if not os.path.isfile(path):
+        fail("找不到檔案: %s" % path)
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".srt":
+        lines = lib.parse_srt(lib.read_text(path))
+        if not lines:
+            fail("這份 srt 裡沒有時間軸。")
+        return Doc(path, sibling_media(path), os.path.splitext(path)[0] + ".txt", lines)
+    if ext == ".txt":
+        lines = lib.parse_transcript(lib.read_text(path))
+        return Doc(path, sibling_media(path), path, lines)
+    txt = lib.sibling_txt(path) or os.path.splitext(path)[0] + ".txt"
+    lines = []
+    if os.path.isfile(txt):
+        lines = lib.parse_transcript(lib.read_text(txt))
+    return Doc(path, path, txt, lines)
+
+
+def save(doc):
+    lib = library()
+    folder = os.path.dirname(doc.txt)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    with open(doc.txt, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(lib.format_txt(doc.lines))
+
+
+def require_line(doc, index):
+    if index < 0 or index >= len(doc.lines):
+        fail("沒有第 %s 句（現在有 %s 句，從 0 開始）。" % (index, len(doc.lines)))
+    return doc.lines[index]
+
+
+def decode_text(text):
+    if text is None:
+        return None
+    return text.replace("\\n", "\n").strip()
+
+
+def apply_times(line, start, end):
+    start = round(max(0.0, float(start)), 1)
+    end = round(float(end), 1)
+    if end <= start:
+        end = round(start + 0.1, 1)
+    line.start = start
+    line.end = end
+
+
+def tracks_of(path):
+    lib = library()
+    tracks, chosen = lib.probe_audio_tracks(path)
+    rows = []
+    for track in tracks:
+        rows.append({
+            "order": track.order,
+            "number": track.order + 1,
+            "stream": track.stream_index,
+            "label": track.label,
+            "default": track.order == chosen,
+        })
+    return rows, chosen
+
+
+def stream_for(path, number):
+    rows, chosen = tracks_of(path)
+    if not rows:
+        return None, ""
+    if number is None:
+        picked = rows[min(chosen, len(rows) - 1)]
+    else:
+        picked = next((row for row in rows if row["number"] == number), None)
+        if picked is None:
+            fail("沒有第 %s 條音軌。用 dg tracks 看有哪些。" % number)
+    return picked["stream"], picked["label"]
+
+
+def cmd_show(args, _client=None):
+    doc = load(args.path)
+    result = {
+        "via": "file",
+        "source": doc.source,
+        "media": doc.media,
+        "txt": doc.txt,
+        "lines": [line_json(index, line) for index, line in enumerate(doc.lines)],
+    }
+    if doc.media and os.path.splitext(doc.media)[1].lower() not in (".txt", ".srt"):
+        rows, _chosen = tracks_of(doc.media)
+        result["tracks"] = rows
+    emit(result)
+
+
+def cmd_tracks(args, _client=None):
+    path = os.path.abspath(args.path)
+    if not os.path.isfile(path):
+        fail("找不到檔案: %s" % path)
+    rows, _chosen = tracks_of(path)
+    emit({"via": "file", "path": path, "tracks": rows})
+
+
+def cmd_at(args, _client=None):
+    lib = library()
+    doc = load(args.path)
+    index = lib.line_at(doc.lines, args.seconds)
+    current = line_json(index, doc.lines[index]) if index is not None else None
+    emit({"via": "file", "seconds": args.seconds, "index": index, "line": current})
+
+
+def cmd_set(args, _client=None):
+    doc = load(args.path)
+    line = require_line(doc, args.index)
+    text = decode_text(args.text)
+    if text is not None and text != line.text:
+        line.text = text
+    if args.start is not None or args.end is not None:
+        start = args.start if args.start is not None else line.start
+        end = args.end if args.end is not None else line.end
+        apply_times(line, start, end)
+    save(doc)
+    emit({"via": "file", "txt": doc.txt, "line": line_json(args.index, line)})
+
+
+def cmd_stamp(args, _client=None):
+    doc = load(args.path)
+    line = require_line(doc, args.index)
+    now = round(float(args.at), 1)
+    if args.edge == "start":
+        line.start = now
+        if line.end <= line.start:
+            line.end = round(line.start + 0.5, 1)
+    else:
+        line.end = round(max(now, line.start + 0.1), 1)
+    save(doc)
+    emit({"via": "file", "txt": doc.txt, "line": line_json(args.index, line)})
+
+
+def cmd_add(args, _client=None):
+    lib = library()
+    doc = load(args.path)
+    if args.index is None:
+        insert_at = len(doc.lines)
+        start = args.start if args.start is not None else (doc.lines[-1].end if doc.lines else 0.0)
+    else:
+        require_line(doc, args.index)
+        insert_at = args.index + 1
+        start = args.start if args.start is not None else doc.lines[args.index].end
+    start = round(max(0.0, float(start)), 1)
+    end = round(float(args.end), 1) if args.end is not None else round(start + 1.0, 1)
+    if end <= start:
+        end = round(start + 0.1, 1)
+    line = lib.Line(start, end, decode_text(args.text) or "")
+    doc.lines.insert(insert_at, line)
+    save(doc)
+    emit({"via": "file", "txt": doc.txt, "line": line_json(insert_at, line), "count": len(doc.lines)})
+
+
+def cmd_delete(args, _client=None):
+    doc = load(args.path)
+    require_line(doc, args.index)
+    removed = doc.lines.pop(args.index)
+    save(doc)
+    emit({"via": "file", "txt": doc.txt, "removed": line_json(args.index, removed), "count": len(doc.lines)})
+
+
+def conversion(name):
+    lib = library()
+    folded = name.strip().lower()
+    for label, config in lib.TEXT_CONVERSIONS:
+        if folded == label.lower() or folded == config.lower():
+            return label, config
+    known = "、".join("%s (%s)" % (label, config) for label, config in lib.TEXT_CONVERSIONS)
+    fail("沒有這個轉換。可用：%s" % known)
+
+
+def cmd_convert(args, _client=None):
+    lib = library()
+    doc = load(args.path)
+    if not doc.lines:
+        fail("還沒有字幕可以轉換。")
+    label, config = conversion(args.mode)
+    changed = 0
+    try:
+        for line in doc.lines:
+            if config == "portrait":
+                converted = lib.wrap_portrait(line.text)
+            elif config == "landscape":
+                converted = lib.unwrap_landscape(line.text)
+            else:
+                converted = lib.convert_chinese(line.text, config)
+            if converted != line.text:
+                line.text = converted
+                changed += 1
+    except Exception as exc:
+        fail("轉換失敗：%s" % exc)
+    if changed:
+        save(doc)
+    emit({"via": "file", "txt": doc.txt, "mode": label, "config": config, "changed": changed, "count": len(doc.lines)})
+
+
+def cmd_srt(args, _client=None):
+    lib = library()
+    doc = load(args.path)
+    if not doc.lines:
+        fail("還沒有字幕可以匯出。")
+    target = args.output or os.path.splitext(doc.media or doc.txt)[0] + ".srt"
+    target = os.path.abspath(target)
+    folder = os.path.dirname(target)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    with open(target, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(lib.format_srt(doc.lines))
+    emit({"via": "file", "srt": target, "count": len(doc.lines)})
+
+
+def cmd_open(args, _client=None):
+    lib = library()
+    media = os.path.abspath(args.path)
+    if not os.path.isfile(media):
+        fail("找不到檔案: %s" % media)
+    text_path = os.path.abspath(args.text)
+    if not os.path.isfile(text_path):
+        fail("找不到文字檔: %s" % text_path)
+    text = lib.read_text(text_path)
+    if text_path.lower().endswith(".srt"):
+        lines = lib.parse_srt(text)
+        if not lines:
+            fail("這份 srt 裡沒有時間軸。")
+    else:
+        lines = lib.parse_transcript(text)
+        if not lines:
+            fail("這份 txt 裡沒有 [秒數-秒數] 這種行。")
+    txt = lib.sibling_txt(media) or os.path.splitext(media)[0] + ".txt"
+    doc = Doc(media, media, txt, lines)
+    save(doc)
+    emit({"via": "file", "media": media, "txt": txt, "count": len(lines)})
+
+
+def cmd_transcribe(args, _client=None):
+    lib = library()
+    media = os.path.abspath(args.path)
+    if not os.path.isfile(media):
+        fail("找不到檔案: %s" % media)
+    if os.path.splitext(media)[1].lower() in (".txt", ".srt"):
+        fail("轉文字要的是影片或音檔。")
+    folder = lib.model_dir()
+    if not folder:
+        fail("找不到轉文字模型 fw-turbo。")
+    txt = lib.sibling_txt(media) or os.path.splitext(media)[0] + ".txt"
+    existing = lib.parse_transcript(lib.read_text(txt)) if os.path.isfile(txt) else []
+    if existing and not args.replace:
+        fail("旁邊已有字幕，重新轉會蓋過。確定的話加上 --replace。", {"txt": txt, "count": len(existing)})
+    stream, label = stream_for(media, args.track)
+    sys.path.insert(0, os.path.dirname(APP))
+    import stable_whisper
+
+    print("正在載入模型...", file=sys.stderr)
+    model = stable_whisper.load_faster_whisper(folder, device="cpu", compute_type="int8", cpu_threads=4)
+    print("正在讀聲音...", file=sys.stderr)
+    audio = lib.load_audio(media, stream)
+    duration = len(audio) / 16000.0 if len(audio) else 0
+    heard = "「%s」" % label if label else "這條音軌"
+    print("開始辨識%s，音檔約 %.0f 秒。" % (heard, duration), file=sys.stderr)
+    shown = -1
+
+    def on_progress(done, total):
+        nonlocal shown
+        second = int(done)
+        if second == shown:
+            return
+        shown = second
+        print("辨識中 %s/%s 秒。" % (second, int(total)), file=sys.stderr)
+
+    result = model.transcribe(
+        audio,
+        language="zh",
+        task="transcribe",
+        beam_size=1,
+        condition_on_previous_text=False,
+        word_timestamps=True,
+        vad=True,
+        suppress_silence=True,
+        suppress_word_ts=True,
+        regroup=True,
+        verbose=None,
+        progress_callback=on_progress,
+    )
+    lines = []
+    for segment in result.segments:
+        text = (segment.text or "").strip()
+        if not text:
+            continue
+        start = float(segment.start)
+        end = float(segment.end)
+        if end <= start:
+            end = start + 0.1
+        lines.append(lib.Line(start, end, text))
+    doc = Doc(media, media, txt, lines)
+    save(doc)
+    emit({
+        "via": "file",
+        "media": media,
+        "txt": txt,
+        "track": label,
+        "count": len(lines),
+        "lines": [line_json(index, line) for index, line in enumerate(lines)],
+    })
+
+
+def cmd_validate(args, _client=None):
+    doc = load(args.path)
+    bad = []
+    for index, line in enumerate(doc.lines):
+        if line.end <= line.start:
+            bad.append({"index": index, "start": line.start, "end": line.end})
+    if bad:
+        fail("有字幕的結束時間沒有比開始晚。", {"txt": doc.txt, "bad": bad})
+    emit({"via": "file", "valid": True, "txt": doc.txt, "count": len(doc.lines)})
+
+
+def cmd_commands(_args, _client=None):
+    emit({
+        "via": "file",
+        "commands": [
+            {"id": "show", "params": "影片或txt", "does": "讀出每句的開始、結束、文字"},
+            {"id": "tracks", "params": "影片", "does": "列出音軌"},
+            {"id": "transcribe", "params": "影片 [--track 號碼] [--replace]", "does": "用對稿同一個模型轉文字，寫進旁邊的 txt"},
+            {"id": "open", "params": "影片 --text 文字檔", "does": "把一份 txt 或 srt 套到這支影片並存成旁邊的 txt"},
+            {"id": "set", "params": "檔案 句號 [--text] [--start] [--end]", "does": "改一句的字或秒數"},
+            {"id": "stamp", "params": "檔案 句號 start|end --at 秒", "does": "把開始或結束改成某個秒數"},
+            {"id": "add", "params": "檔案 [--index] [--start] [--end] [--text]", "does": "加一句"},
+            {"id": "delete", "params": "檔案 句號", "does": "刪一句"},
+            {"id": "convert", "params": "檔案 模式", "does": "繁簡轉換，或直式、橫式"},
+            {"id": "at", "params": "檔案 秒數", "does": "這個秒數對到哪一句"},
+            {"id": "srt", "params": "檔案 [-o 路徑]", "does": "匯出 SRT"},
+            {"id": "validate", "params": "檔案", "does": "檢查每句的結束時間"},
+        ],
+    })
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="dg")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    def add(name, fn, help_text=None):
+        item = sub.add_parser(name, help=help_text)
+        item.set_defaults(fn=fn)
+        return item
+
+    item = add("show", cmd_show, "讀出字幕")
+    item.add_argument("path")
+    item = add("tracks", cmd_tracks, "列出音軌")
+    item.add_argument("path")
+    item = add("transcribe", cmd_transcribe, "轉成文字")
+    item.add_argument("path")
+    item.add_argument("--track", type=int, help="音軌號碼，從 1 開始，跟視窗裡的一樣")
+    item.add_argument("--replace", action="store_true", help="蓋過旁邊已經有的字幕")
+    item = add("open", cmd_open, "把文字檔套到影片上")
+    item.add_argument("path")
+    item.add_argument("--text", required=True)
+    item = add("set", cmd_set, "改一句")
+    item.add_argument("path")
+    item.add_argument("index", type=int)
+    item.add_argument("--text")
+    item.add_argument("--start", type=float)
+    item.add_argument("--end", type=float)
+    item = add("stamp", cmd_stamp, "把開始或結束改成指定秒數")
+    item.add_argument("path")
+    item.add_argument("index", type=int)
+    item.add_argument("edge", choices=("start", "end"))
+    item.add_argument("--at", type=float, required=True)
+    item = add("add", cmd_add, "加一句")
+    item.add_argument("path")
+    item.add_argument("--index", type=int)
+    item.add_argument("--start", type=float)
+    item.add_argument("--end", type=float)
+    item.add_argument("--text", default="")
+    item = add("delete", cmd_delete, "刪一句")
+    item.add_argument("path")
+    item.add_argument("index", type=int)
+    item = add("convert", cmd_convert, "繁簡或直式橫式")
+    item.add_argument("path")
+    item.add_argument("mode")
+    item = add("at", cmd_at, "某個秒數是哪一句")
+    item.add_argument("path")
+    item.add_argument("seconds", type=float)
+    item = add("srt", cmd_srt, "匯出 SRT")
+    item.add_argument("path")
+    item.add_argument("-o", "--output")
+    item = add("validate", cmd_validate)
+    item.add_argument("path")
+    add("commands", cmd_commands)
+    return parser
+
+
+def main(argv=None):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    args = build_parser().parse_args(argv)
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

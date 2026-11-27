@@ -1,6 +1,6 @@
 # Craft 控制橋
 
-同一台電腦上，給 bot 操作已安裝的 FilmCraft、VectorCraft、PhotoCraft。先把軟體的控制埠打開，再在對應資料夾執行 `python fc`、`python vc` 或 `python pc`。成功時畫面直接更新，終端機印一行 JSON，`"ok": true` 就是做成了。
+同一台電腦上，給 bot 操作已安裝的 FilmCraft、VectorCraft、PhotoCraft，以及對稿。前三支先把軟體的控制埠打開，再執行 `python fc`、`python vc` 或 `python pc`。對稿沒有控制埠，`python dg` 改的是影片旁邊的 txt。成功時終端機印一行 JSON，`"ok": true` 就是做成了。
 
 埠沒開，或指令加上 `--offline`，才會改檔案，畫面上不會動。參數和回傳寫在各資料夾的 `API.md`。
 
@@ -55,6 +55,20 @@ python pc quit
 ```
 
 `pc` 會讀 `%TEMP%\photocraft.tok`。`pc quit` 先存檔再關閉。
+
+## 對稿
+
+對稿用視窗看影片、改字幕。`dg` 改同一份 txt，不負責播放。先讓桌面上的 `對稿.py` 旁邊有 `fw-turbo` 模型，或設定 `DUIGAO_PY`。
+
+```text
+cd duigao-bridge
+python dg show C:\art\clip.mp4
+python dg transcribe C:\art\clip.mp4
+python dg set C:\art\clip.mp4 0 --text 啊哈
+python dg srt C:\art\clip.mp4
+```
+
+旁邊已經有字幕時，`transcribe` 不會蓋掉，要重轉才加 `--replace`。對稿視窗若正開著，要重新匯入才看得到 `dg` 改過的字。匯出的 SRT 可交給 FilmCraft 的 `captions.import`。
 
 ## 查其餘功能
 
