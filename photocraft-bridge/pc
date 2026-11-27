@@ -1,0 +1,649 @@
+#!/usr/bin/env python3
+"""pc — drive PhotoCraft from the command line.
+
+The running app (photocraft --control, default 127.0.0.1:7878, with a 64-hex token)
+is the editor. Every change is an engine command, so the open document updates
+without a reload. A .pcraft directory is written only when that port is closed,
+or when --offline is set. Pixels live in tiles next to manifest.json; offline
+edits cover a new document, text layers and solid fill layers. See API.md.
+"""
+import argparse
+import json
+import os
+import re
+import socket
+import sys
+import zipfile
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+SCHEMA = os.path.join(HERE, "schema", "pcraft.schema.json")
+TOKEN_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+class Offline(Exception):
+    pass
+
+
+class ControlError(Exception):
+    pass
+
+
+def emit(result):
+    print(json.dumps({"ok": True, "result": result}, ensure_ascii=False))
+
+
+def fail(message, result=None):
+    body = {"ok": False, "error": str(message)}
+    if result is not None:
+        body["result"] = result
+    print(json.dumps(body, ensure_ascii=False))
+    raise SystemExit(1)
+
+
+def warn_offline():
+    print("control port closed; edited the .pcraft manifest directly. Open the folder in PhotoCraft to see it.", file=sys.stderr)
+
+
+def port_open(host, port):
+    sock = socket.socket()
+    sock.settimeout(0.4)
+    try:
+        sock.connect((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def read_token_file(path):
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read().strip()
+    if not TOKEN_RE.match(text):
+        fail("token file must contain exactly 64 hexadecimal characters")
+    return text.lower()
+
+
+def find_token(args):
+    if getattr(args, "token", None):
+        if not TOKEN_RE.match(args.token.strip()):
+            fail("--token must be 64 hexadecimal characters")
+        return args.token.strip().lower()
+    if getattr(args, "token_file", None):
+        return read_token_file(args.token_file)
+    env = os.environ.get("PHOTOCRAFT_CONTROL_TOKEN", "").strip()
+    if env:
+        if not TOKEN_RE.match(env):
+            fail("PHOTOCRAFT_CONTROL_TOKEN must be 64 hexadecimal characters")
+        return env.lower()
+    env_file = os.environ.get("PHOTOCRAFT_CONTROL_TOKEN_FILE", "").strip()
+    if env_file:
+        return read_token_file(env_file)
+    temp = os.environ.get("TEMP") or os.environ.get("TMP") or ""
+    for name in ("photocraft-control.token", "photocraft.tok"):
+        path = os.path.join(temp, name)
+        if os.path.isfile(path):
+            return read_token_file(path)
+    return None
+
+
+class Client:
+    def __init__(self, host, port, token):
+        self.host = host
+        self.port = port
+        self.token = token
+        self.timeout = 60
+        self.seq = 0
+
+    def call(self, method, params=None):
+        sock = socket.create_connection((self.host, self.port), self.timeout)
+        sock.settimeout(self.timeout)
+        try:
+            fh = sock.makefile("rwb")
+            auth = self._exchange(fh, "auth", {"token": self.token}, "auth")
+            if not auth.get("ok"):
+                raise ControlError(auth.get("error") or "authentication failed")
+            self.seq += 1
+            reply = self._exchange(fh, method, params or {}, self.seq)
+        except (TimeoutError, OSError) as exc:
+            raise ControlError("the control port closed the connection (%s)" % exc) from exc
+        finally:
+            sock.close()
+        if not reply.get("ok"):
+            raise ControlError(reply.get("error") or "command failed")
+        return reply.get("result")
+
+    def _exchange(self, fh, method, params, req_id):
+        line = json.dumps({"id": req_id, "method": method, "params": params}, ensure_ascii=False) + "\n"
+        fh.write(line.encode("utf-8"))
+        fh.flush()
+        raw = fh.readline()
+        if not raw:
+            raise ControlError("the control port closed the connection")
+        return json.loads(raw.decode("utf-8"))
+
+    def execute(self, command, params=None):
+        return self.call("engine.execute", {"command": command, "params": params or {}})
+
+
+def parse_value(text):
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
+def nest_key(obj, key, value):
+    obj[key] = value
+
+
+def read_project(path):
+    if os.path.isdir(path):
+        with open(os.path.join(path, "manifest.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as zf:
+            with zf.open("manifest.json") as fh:
+                return json.load(fh)
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def write_project(path, doc):
+    folder = path if path.endswith(".pcraft") or os.path.isdir(path) else path
+    os.makedirs(folder, exist_ok=True)
+    target = os.path.join(folder, "manifest.json")
+    with open(target, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    return folder
+
+
+def blank_document(name, width, height, background):
+    opaque = "ffffffff" if background != "transparent" else "00000000"
+    if background == "black":
+        opaque = "000000ff"
+    return {
+        "format_version": 1,
+        "generator": "pc",
+        "document": {
+            "id": 1,
+            "name": name,
+            "size": {"width": width, "height": height},
+            "resolution_dpi": 72.0,
+            "mode": "Rgb",
+            "depth": "U8",
+            "icc_profile": None,
+            "layers": [raster_layer(1, "Background", opaque)],
+            "channels": [],
+            "guides": {"horizontal": [], "vertical": []},
+            "metadata": {"xmp": None, "exif": None, "psd_resources": [], "psd_global_blocks": []},
+            "global_light": {"angle": 120.0, "altitude": 30.0},
+            "ruler_origin": [0.0, 0.0],
+        },
+    }
+
+
+def raster_layer(layer_id, name, default):
+    return {
+        "id": layer_id,
+        "name": name,
+        "visible": True,
+        "locks": {"transparency": False, "pixels": False, "position": False, "artboard": False, "all": False},
+        "blend": "Normal",
+        "opacity": 1.0,
+        "fill_opacity": 1.0,
+        "clipped": False,
+        "mask": None,
+        "effects": {"enabled": True, "items": [], "psd_raw": None},
+        "label": "None",
+        "content": {"kind": "raster", "surface": {"format": {"mode": "Rgb", "sample": "U8", "alpha": True}, "default": default, "tiles": []}},
+        "psd_blocks": [],
+        "psd_id": None,
+        "fill_cache": None,
+    }
+
+
+def next_id(doc):
+    ids = []
+
+    def walk(layers):
+        for layer in layers:
+            ids.append(int(layer.get("id") or 0))
+            content = layer.get("content") or {}
+            walk(content.get("children") or [])
+
+    walk(doc["document"]["layers"])
+    return (max(ids) if ids else 0) + 1
+
+
+def hex_color(text):
+    raw = text[1:] if text.startswith("#") else text
+    if len(raw) != 6 or any(c not in "0123456789abcdefABCDEF" for c in raw):
+        fail("color must be #rrggbb")
+    channels = [int(raw[i : i + 2], 16) / 255.0 for i in (0, 2, 4)]
+    return {"mode": "Rgb", "c": channels + [0.0], "alpha": 1.0}
+
+
+def require_project(args):
+    if not args.project:
+        fail("pass -p path.pcraft")
+    return args.project
+
+
+def cmd_new(args, client):
+    params = {
+        "name": args.name,
+        "width": args.width,
+        "height": args.height,
+        "resolution": args.resolution,
+        "mode": "rgb",
+        "depth": args.depth,
+        "background": args.background,
+    }
+    if client:
+        result = client.execute("file.new", params)
+        saved = None
+        if args.project:
+            saved = client.call("app.save", {"path": args.project, "wait": True})
+        emit({"via": "control", "document": result, "saved": saved})
+        return
+    warn_offline()
+    path = require_project(args)
+    folder = write_project(path, blank_document(args.name, args.width, args.height, args.background))
+    emit({"via": "file", "path": folder})
+
+
+def cmd_open(args, client):
+    if not client:
+        fail("open needs PhotoCraft listening on the control port")
+    emit({"via": "control", "opened": client.call("app.open", {"path": args.path})})
+
+
+def cmd_save(args, client):
+    if not client:
+        path = args.path or args.project
+        if path and (os.path.isdir(path) or os.path.isfile(path)):
+            emit({"via": "file", "path": path})
+            return
+        fail("save needs PhotoCraft listening on the control port")
+    params = {"wait": True}
+    if args.path:
+        params["path"] = args.path
+    emit({"via": "control", "saved": client.call("app.save", params)})
+
+
+def cmd_layer(args, client):
+    if client:
+        emit({"via": "control", "layer": client.execute("layer.new.layer", {"name": args.name} if args.name else {})})
+        return
+    warn_offline()
+    path = require_project(args)
+    doc = read_project(path)
+    layer_id = next_id(doc)
+    doc["document"]["layers"].append(raster_layer(layer_id, args.name or "Layer %s" % layer_id, "00000000"))
+    write_project(path, doc)
+    emit({"via": "file", "id": layer_id})
+
+
+def cmd_fill(args, client):
+    if client:
+        emit({"via": "control", "fill": client.execute("edit.fill", {"contents": "color", "color": args.color})})
+        return
+    warn_offline()
+    path = require_project(args)
+    doc = read_project(path)
+    layer_id = next_id(doc)
+    layer = raster_layer(layer_id, "Color Fill", "00000000")
+    layer["content"] = {"kind": "fill", "fill": {"Solid": hex_color(args.color)}}
+    doc["document"]["layers"].append(layer)
+    write_project(path, doc)
+    emit({"via": "file", "id": layer_id})
+
+
+def cmd_select(args, client):
+    if not client:
+        fail("select needs PhotoCraft listening on the control port")
+    params = {"x": args.x, "y": args.y, "width": args.width, "height": args.height, "mode": args.mode}
+    emit({"via": "control", "selection": client.execute("select.rect", params)})
+
+
+def cmd_text(args, client):
+    if client:
+        params = {"x": args.x, "y": args.y, "text": args.text, "size": args.size}
+        if args.color:
+            params["color"] = args.color
+        emit({"via": "control", "text": client.execute("type.create", params)})
+        return
+    warn_offline()
+    path = require_project(args)
+    doc = read_project(path)
+    layer_id = next_id(doc)
+    layer = raster_layer(layer_id, args.text[:32] or "Type", "00000000")
+    layer["content"] = {
+        "kind": "text",
+        "text": args.text,
+        "font_family": "Arial",
+        "size_pt": args.size,
+        "color": hex_color(args.color or "#000000"),
+        "transform": [1.0, 0.0, 0.0, 1.0, args.x, args.y],
+        "cache": None,
+        "psd_raw": None,
+    }
+    doc["document"]["layers"].append(layer)
+    write_project(path, doc)
+    emit({"via": "file", "id": layer_id})
+
+
+def cmd_adjust(args, client):
+    if not client:
+        fail("adjust needs PhotoCraft listening on the control port")
+    emit({
+        "via": "control",
+        "adjustment": client.execute("image.adjustments.brightnessContrast", {"brightness": args.brightness, "contrast": args.contrast}),
+    })
+
+
+def cmd_export(args, client):
+    if not client:
+        fail("export needs PhotoCraft listening on the control port")
+    emit({"via": "control", "exported": client.call("app.save", {"path": args.path, "wait": True})})
+
+
+def walk_layers(layers):
+    for layer in layers or []:
+        yield layer
+        content = layer.get("content") or {}
+        yield from walk_layers(content.get("children") or [])
+
+
+def linked_from_inspect(doc):
+    missing = []
+    for layer in walk_layers(doc.get("layers") or []):
+        source = layer.get("smartSource") or {}
+        if source.get("kind") == "linked" and source.get("path") and not os.path.exists(source["path"]):
+            missing.append({"id": layer.get("id"), "name": layer.get("name"), "path": source["path"]})
+    return missing
+
+
+def linked_from_manifest(doc):
+    missing = []
+    for layer in walk_layers(doc["document"]["layers"]):
+        content = layer.get("content") or {}
+        source = content.get("source") or {}
+        if content.get("kind") == "smart" and source.get("kind") == "linked" and source.get("path") and not os.path.exists(source["path"]):
+            missing.append({"id": layer.get("id"), "name": layer.get("name"), "path": source["path"]})
+    return missing
+
+
+def cmd_show(args, client):
+    if not client:
+        fail("show needs PhotoCraft listening on the control port")
+    emit({"via": "control", "document": client.execute("document.inspect", {})})
+
+
+def cmd_links(args, client):
+    if client:
+        doc = client.execute("document.inspect", {})
+        missing = linked_from_inspect(doc)
+        emit({"via": "control", "missing": missing})
+        return
+    path = require_project(args)
+    missing = linked_from_manifest(read_project(path))
+    emit({"via": "file", "missing": missing})
+
+
+def cmd_jobs(args, client):
+    if not client:
+        fail("jobs needs PhotoCraft listening on the control port")
+    emit({"via": "control", "jobs": client.call("jobs.list", {})})
+
+
+def cmd_status(args, client):
+    if not client:
+        fail("status needs PhotoCraft listening on the control port")
+    document = None
+    missing = []
+    try:
+        document = client.execute("document.inspect", {})
+        missing = linked_from_inspect(document)
+    except ControlError as exc:
+        if "no document" not in str(exc):
+            raise
+    emit({
+        "via": "control",
+        "session": client.execute("session.inspect", {}),
+        "document": document,
+        "missing": missing,
+        "jobs": client.call("jobs.list", {}),
+    })
+
+
+def discard_dialog(ui):
+    for dialog in (ui or {}).get("dialogs") or []:
+        if isinstance(dialog, dict) and dialog.get("id") == "discard":
+            return dialog
+    return None
+
+
+def answer_quit_dialogs(client, choice):
+    answered = 0
+    while True:
+        try:
+            ui = client.call("ui.inspect", {})
+        except ControlError:
+            return answered
+        if not discard_dialog(ui):
+            return answered
+        answered += 1
+        if answered > 64:
+            client.call("ui.dialog.cancel", {"dialog": "discard"})
+            fail("quit kept asking to save; the last prompt was cancelled")
+        result = client.call("ui.dialog.confirm", {"dialog": "discard", "choice": choice}) or {}
+        if result.get("fileDialog"):
+            client.call("ui.dialog.cancel", {"dialog": "discard"})
+            fail("a document has no file yet. pc save PATH, or pc quit --discard")
+        if result.get("open") is False:
+            return answered
+
+
+def quit_app(client, discard):
+    if discard:
+        client.call("app.quit", {})
+        answered = answer_quit_dialogs(client, "dontSave")
+        emit({"via": "control", "quit": True, "discarded": True, "prompts": answered})
+        return
+    session = client.execute("session.inspect", {})
+    saved = []
+    for doc in session.get("documents") or []:
+        if not doc.get("dirty"):
+            continue
+        title = doc.get("name") or doc.get("index")
+        path = doc.get("path")
+        if not path:
+            fail("%s has no file yet. pc save PATH, or pc quit --discard" % title)
+        client.execute("document.activate", {"document": doc.get("index")})
+        saved.append({"name": title, "result": client.call("app.save", {"path": path, "wait": True})})
+    client.call("app.quit", {})
+    answered = answer_quit_dialogs(client, "save")
+    emit({"via": "control", "quit": True, "saved": saved, "prompts": answered})
+
+
+def cmd_quit(args, client):
+    if not client:
+        fail("quit needs PhotoCraft listening on the control port")
+    quit_app(client, args.discard)
+
+
+def cmd_exec(args, client):
+    if not client:
+        fail("exec needs PhotoCraft listening on the control port")
+    params = json.loads(args.json) if args.json else {}
+    for pair in args.pairs:
+        key, _, val = pair.partition("=")
+        nest_key(params, key, parse_value(val))
+    if args.command == "app.quit" and set(params) <= {"discard"}:
+        quit_app(client, bool(params.get("discard")))
+        return
+    if args.command in ("app.open", "app.save", "app.quit", "jobs.list", "jobs.cancel", "ui.inspect"):
+        emit({"via": "control", "command": args.command, "result": client.call(args.command, params)})
+        return
+    emit({"via": "control", "command": args.command, "result": client.execute(args.command, params)})
+
+
+def cmd_commands(args, client):
+    if not client:
+        fail("commands needs PhotoCraft listening on the control port")
+    listed = client.call("engine.commands")
+    if args.filter:
+        needle = args.filter.lower()
+        listed = [row for row in listed if needle in json.dumps(row, ensure_ascii=False).lower()]
+    emit({"via": "control", "commands": listed})
+
+
+def report_batch(payload):
+    failed_rows = [row for row in payload.get("results") or [] if not row.get("ok", True)]
+    if payload.get("failed") or failed_rows:
+        detail = "; ".join("%s: %s" % (row.get("command") or "step", row.get("error") or "failed") for row in failed_rows) or "a batch step failed"
+        fail(detail, {"via": "control", "batch": payload})
+    emit({"via": "control", "batch": payload})
+
+
+def cmd_batch(args, client):
+    if not client:
+        fail("batch needs PhotoCraft listening on the control port")
+    with open(args.file, encoding="utf-8") as fh:
+        steps = json.load(fh)
+    try:
+        result = client.call("engine.batch", {"steps": steps, "stopOnError": not args.keep_going})
+        report_batch(result)
+        return
+    except ControlError as exc:
+        if "unknown method" not in str(exc):
+            fail(exc)
+    results = []
+    failed = 0
+    for step in steps:
+        command = step.get("command") or step.get("id")
+        try:
+            results.append({"ok": True, "command": command, "result": client.execute(command, step.get("params") or {})})
+        except ControlError as exc:
+            failed += 1
+            results.append({"ok": False, "command": command, "error": str(exc)})
+            if not args.keep_going:
+                break
+    report_batch({"completed": len(results) - failed, "failed": failed, "results": results, "fallback": "engine.execute"})
+
+
+def cmd_validate(args, _client):
+    from jsonschema import Draft202012Validator
+    if not args.project:
+        fail("pass -p path.pcraft")
+    with open(SCHEMA, encoding="utf-8") as fh:
+        schema = json.load(fh)
+    doc = read_project(args.project)
+    errors = sorted(Draft202012Validator(schema).iter_errors(doc), key=lambda err: list(err.path))
+    if errors:
+        fail("; ".join("/".join(map(str, err.path)) + ": " + err.message.splitlines()[0] for err in errors[:12]))
+    emit({"via": "file", "valid": True, "schema": SCHEMA})
+
+
+def add_common(parser, with_defaults):
+    def d(value):
+        return value if with_defaults else argparse.SUPPRESS
+
+    parser.add_argument("--host", default=d("127.0.0.1"))
+    parser.add_argument("--port", type=int, default=d(7878))
+    parser.add_argument("--offline", action="store_true", default=d(False))
+    parser.add_argument("-p", "--project", default=d(None))
+    parser.add_argument("--token", default=d(None))
+    parser.add_argument("--token-file", default=d(None))
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="pc")
+    add_common(parser, True)
+    common = argparse.ArgumentParser(add_help=False)
+    add_common(common, False)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    def add(name, fn, help_text=None):
+        item = sub.add_parser(name, parents=[common], help=help_text)
+        item.set_defaults(fn=fn)
+        return item
+
+    item = add("new", cmd_new, "create a document")
+    item.add_argument("name")
+    item.add_argument("--width", type=int, default=1920)
+    item.add_argument("--height", type=int, default=1080)
+    item.add_argument("--resolution", type=float, default=72)
+    item.add_argument("--depth", type=int, default=8)
+    item.add_argument("--background", default="white", choices=["white", "black", "transparent"])
+    item = add("open", cmd_open)
+    item.add_argument("path")
+    item = add("save", cmd_save)
+    item.add_argument("path", nargs="?")
+    item = add("layer", cmd_layer, "add an empty layer")
+    item.add_argument("name", nargs="?")
+    item = add("fill", cmd_fill, "fill with a color")
+    item.add_argument("--color", required=True)
+    item = add("select", cmd_select, "rectangular selection")
+    item.add_argument("--x", type=float, required=True)
+    item.add_argument("--y", type=float, required=True)
+    item.add_argument("--width", type=float, required=True)
+    item.add_argument("--height", type=float, required=True)
+    item.add_argument("--mode", default="replace")
+    item = add("text", cmd_text)
+    item.add_argument("text")
+    item.add_argument("--x", type=float, default=40)
+    item.add_argument("--y", type=float, default=80)
+    item.add_argument("--size", type=float, default=24)
+    item.add_argument("--color")
+    item = add("adjust", cmd_adjust, "brightness and contrast")
+    item.add_argument("--brightness", type=float, default=0)
+    item.add_argument("--contrast", type=float, default=0)
+    item = add("export", cmd_export, "write a file through app.save")
+    item.add_argument("path")
+    add("show", cmd_show, "document.inspect")
+    add("links", cmd_links, "linked smart objects whose files are missing")
+    add("jobs", cmd_jobs, "background jobs")
+    add("status", cmd_status, "session, document, missing links, and jobs")
+    item = add("quit", cmd_quit, "save modified documents, then quit")
+    item.add_argument("--discard", action="store_true", help="close modified documents without saving")
+    item = add("exec", cmd_exec, "run any engine command, or a control method such as app.save")
+    item.add_argument("command")
+    item.add_argument("json", nargs="?")
+    item.add_argument("pairs", nargs="*")
+    item = add("commands", cmd_commands)
+    item.add_argument("--filter")
+    item = add("batch", cmd_batch)
+    item.add_argument("file")
+    item.add_argument("--keep-going", action="store_true", help="run the remaining steps after one fails")
+    add("validate", cmd_validate)
+    return parser
+
+
+def main(argv=None):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    args = build_parser().parse_args(argv)
+    client = None
+    if not args.offline and port_open(args.host, args.port):
+        token = find_token(args)
+        if not token:
+            fail("PhotoCraft is listening, but no 64-hex token was found. Pass --token or --token-file.")
+        client = Client(args.host, args.port, token)
+    try:
+        args.fn(args, client)
+    except Offline:
+        fail("the control port closed while the command was running")
+    except ControlError as exc:
+        fail(exc)
+    except BrokenPipeError:
+        fail("the control port closed the connection")
+
+
+if __name__ == "__main__":
+    main()

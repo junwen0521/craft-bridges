@@ -1,0 +1,1118 @@
+#!/usr/bin/env python3
+"""fc — drive FilmCraft from the command line.
+
+The running app (filmcraft --control, default 127.0.0.1:9877) is the editor.
+Every change is an engine command, so the open timeline updates without a
+reload. The project file is edited only when that port is closed, or when
+--offline is set. See API.md.
+"""
+import argparse, json, os, socket, subprocess, sys
+from fractions import Fraction
+
+TPS = 254016000000
+HERE = os.path.dirname(os.path.realpath(__file__))
+SCHEMA_VERSION = 15
+
+class Offline(Exception):
+    pass
+
+class ControlError(Exception):
+    pass
+
+def ticks(sec):
+    return int(round(Fraction(str(sec)) * TPS))
+
+def snap(n, fps):
+    f = Fraction(int(fps["num"]), int(fps["den"]))
+    return int(round(Fraction(n) * f / TPS) * TPS / f)
+
+def frame_ticks(fps):
+    return int(TPS * int(fps["den"]) / int(fps["num"]))
+
+def hex64(s):
+    return isinstance(s, str) and len(s) == 64 and all(c in "0123456789abcdefABCDEF" for c in s)
+
+def load_token(explicit):
+    if explicit and hex64(explicit.strip()):
+        return explicit.strip()
+    env = os.environ.get("FILMCRAFT_CONTROL_TOKEN", "").strip()
+    if hex64(env):
+        return env
+    temp = os.environ.get("TEMP") or os.environ.get("TMP") or ""
+    names = ["fc1104.tok", "filmcraft.tok", "filmcraft-control.tok"]
+    paths = [os.path.join(temp, n) for n in names] if temp else []
+    if temp and os.path.isdir(temp):
+        paths += [os.path.join(temp, n) for n in os.listdir(temp) if n.lower().endswith(".tok")]
+    seen = set()
+    for path in paths:
+        if path in seen or not os.path.isfile(path):
+            continue
+        seen.add(path)
+        try:
+            text = open(path, encoding="utf-8").read().strip()
+        except OSError:
+            continue
+        if hex64(text):
+            return text
+    return ""
+
+def port_open(host, port):
+    try:
+        s = socket.create_connection((host, port), 0.4)
+    except OSError:
+        return False
+    s.close()
+    return True
+
+class Client:
+    def __init__(self, host, port, token, timeout=60):
+        self.host, self.port, self.token, self.timeout = host, port, token, timeout
+
+    def call(self, method, params=None):
+        if not self.token:
+            raise ControlError("FilmCraft is listening but no 64-hex control token was found (FILMCRAFT_CONTROL_TOKEN or %TEMP%\\fc1104.tok)")
+        body = {"id": 1, "token": self.token, "method": method, "params": params or {}}
+        try:
+            sock = socket.create_connection((self.host, self.port), self.timeout)
+        except ConnectionRefusedError:
+            raise Offline()
+        except OSError as e:
+            if getattr(e, "winerror", None) in (10061, 10060) or e.errno in (111, 61):
+                raise Offline()
+            raise
+        try:
+            sock.settimeout(self.timeout)
+            f = sock.makefile("rwb")
+            f.write((json.dumps(body, ensure_ascii=False) + "\n").encode("utf-8"))
+            f.flush()
+            line = f.readline()
+        finally:
+            sock.close()
+        if not line:
+            raise ControlError("control port closed the connection without a reply")
+        try:
+            reply = json.loads(line.decode("utf-8"))
+        except json.JSONDecodeError as e:
+            raise ControlError("control port returned non-JSON: %s" % e)
+        if not reply.get("ok"):
+            raise ControlError(reply.get("error") or "command failed")
+        return reply.get("result")
+
+    def execute(self, command, params=None):
+        return self.call("engine.execute", {"command": command, "params": params or {}})
+
+def emit(result):
+    print(json.dumps({"ok": True, "result": result}, ensure_ascii=False))
+
+def fail(message):
+    print(json.dumps({"ok": False, "error": str(message)}, ensure_ascii=False))
+    raise SystemExit(1)
+
+def parse_value(text):
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+def nest_key(obj, key, value):
+    parts = key.split(".")
+    cur = obj
+    for part in parts[:-1]:
+        cur = cur.setdefault(part, {})
+    cur[parts[-1]] = value
+
+# ---------- project file (only when the app is not listening) ----------
+
+def load_project(path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+def save_project(args, project, message):
+    folder = os.path.dirname(os.path.abspath(args.project)) or "."
+    os.makedirs(folder, exist_ok=True)
+    tmp = args.project + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(project, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, args.project)
+    if not args.no_git:
+        if not os.path.isdir(os.path.join(folder, ".git")):
+            subprocess.run(["git", "init", "-q", folder], check=False)
+        git = ["git", "-C", folder, "-c", "user.name=FilmCraft管家", "-c", "user.email=bot@local"]
+        subprocess.run(git + ["add", os.path.basename(args.project)], check=False)
+        subprocess.run(git + ["commit", "-q", "-m", message], check=False)
+
+def alloc(project):
+    n = project["project"]["next_id"]
+    project["project"]["next_id"] = n + 1
+    return n
+
+def active_sequence(project):
+    view = project.get("view") or {}
+    sid = view.get("active_sequence")
+    if sid is None:
+        for item in project["project"]["items"].values():
+            if "Sequence" in item["kind"]:
+                sid = item["id"]
+                break
+    if sid is None:
+        fail("the project has no sequence")
+    return project["project"]["items"][str(sid)]["kind"]["Sequence"], sid
+
+def find_track(seq, name):
+    want = name
+    for track in seq["video_tracks"] + seq["audio_tracks"]:
+        short = track["name"].replace("Video ", "V").replace("Audio ", "A")
+        if track["name"] == want or short == want or str(track["id"]) == str(want):
+            return track
+    fail("no track %s" % name)
+
+def video_effects(width, height, anchor, scale):
+    def pv(kind, value):
+        return {"value": {kind: value}}
+    return [
+        {"effect": "motion", "enabled": True, "params": {
+            "anchor": pv("Vec2", {"x": anchor[0], "y": anchor[1]}),
+            "anti_flicker": pv("Float", 0.0),
+            "position": pv("Vec2", {"x": width / 2, "y": height / 2}),
+            "rotation": pv("Float", 0.0),
+            "scale": pv("Float", scale),
+            "scale_width": pv("Float", 100.0),
+            "uniform_scale": pv("Bool", True),
+        }},
+        {"effect": "opacity", "enabled": True, "params": {
+            "blend": pv("Choice", 0), "opacity": pv("Float", 100.0),
+        }},
+        {"effect": "time_remap", "enabled": True, "params": {"speed": pv("Float", 100.0)}},
+    ]
+
+def audio_effects():
+    def pv(kind, value):
+        return {"value": {kind: value}}
+    return [
+        {"effect": "volume", "enabled": True, "params": {"bypass": pv("Bool", False), "level": pv("Float", 0.0)}},
+        {"effect": "channel_volume", "enabled": True, "params": {
+            "bypass": pv("Bool", False), "left": pv("Float", 0.0), "right": pv("Float", 0.0),
+        }},
+        {"effect": "panner", "enabled": True, "params": {"balance": pv("Float", 0.0)}},
+    ]
+
+def new_track(project, kind, n):
+    return {
+        "id": alloc(project), "kind": kind, "name": "%s %d" % (kind, n), "items": [], "transitions": [],
+        "locked": False, "sync_lock": True, "enabled": True, "muted": False, "solo": False,
+        "channels": "Stereo", "volume_db": 0.0, "pan": 0.0, "effects": [],
+        "mixer": {"mode": "Read", "output": None, "record_arm": False, "solo_safe": False, "input_map": "Stereo"},
+    }
+
+def blank_project(name, width, height, fps, video_n, audio_n, sequence_name):
+    rate = {"num": int(fps), "den": 1} if float(fps) == int(fps) else {"num": int(round(float(fps) * 1000)), "den": 1000}
+    project = {
+        "format": "filmcraft.project", "schema_version": SCHEMA_VERSION, "generator": "FilmCraft 0.15.0",
+        "project": {
+            "name": name,
+            "settings": {
+                "renderer": "FilmCraft GPU Acceleration (wgpu)", "video_display": "Timecode",
+                "audio_display_samples": True, "default_still_duration": 5 * TPS,
+                "default_transition_duration_frames": 24, "default_audio_transition_duration": TPS,
+                "ingest": {"enabled": False, "action": "createProxies", "destination": None, "preset": ""},
+                "title_safe": [20.0, 20.0], "action_safe": [10.0, 10.0], "capture_format": "DV",
+                "scratch": {"captured": None, "videoPreviews": None, "audioPreviews": None, "autoSave": None},
+            },
+            "root": {"id": 0, "name": name, "children": []}, "items": {}, "next_id": 1,
+        },
+    }
+    seq = {
+        "settings": {
+            "width": width, "height": height, "frame_rate": rate, "par": [1, 1], "sample_rate": 48000,
+            "drop_frame": False, "preset": "%dx%d %s" % (width, height, ("%g" % float(fps))),
+            "audio_master": "Stereo", "preview_codec": "ProRes 422", "max_bit_depth": False,
+            "max_render_quality": False, "working_space": "Rec. 709",
+            "color": {"working": "Rec709", "wide_gamut": False, "auto_tone_map": True},
+        },
+        "video_tracks": [new_track(project, "Video", i + 1) for i in range(video_n)],
+        "audio_tracks": [new_track(project, "Audio", i + 1) for i in range(audio_n)],
+        "markers": [], "mark_in": None, "mark_out": None, "work_area": None, "start_timecode": 0,
+        "master_volume_db": 0.0, "master_effects": [],
+        "master_mixer": {"mode": "Read", "output": None, "record_arm": False, "solo_safe": False, "input_map": "Stereo"},
+        "submix_tracks": [], "caption_tracks": [],
+    }
+    sid = alloc(project)
+    project["project"]["items"][str(sid)] = {
+        "id": sid, "name": sequence_name or name, "label": "Forest", "kind": {"Sequence": seq}, "metadata": {}, "created": sid,
+    }
+    project["project"]["root"]["children"].append({"Item": sid})
+    project["view"] = {"open_sequences": [sid], "active_sequence": sid, "sequences": {}}
+    return project
+
+def make_clip(project, item, start, dur, source_in, effects, link, name=None):
+    src = project["project"]["items"][str(item)]
+    return {
+        "id": alloc(project), "item": item, "name": name or src["name"], "label": src["label"],
+        "start": start, "duration": dur, "source_in": source_in, "speed": 1.0, "reverse": False,
+        "enabled": True, "link": link, "group": None, "effects": effects, "markers": [],
+        "gain_db": 0.0, "frame_hold": None, "scale_to_frame": False,
+    }
+
+def transition(project, start, dur, left, right, align, effect):
+    return {
+        "id": alloc(project),
+        "effect": {"effect": effect, "enabled": True, "params": {}},
+        "start": start, "duration": dur, "from": left, "to": right, "align": align, "reverse": False,
+    }
+
+def set_param(effects, effect, param, value):
+    for inst in effects:
+        if inst["effect"] == effect:
+            inst["params"][param] = {"value": value}
+            return
+    effects.append({"effect": effect, "enabled": True, "params": {param: {"value": value}}})
+
+def warn_offline():
+    print("control port closed; edited the .fcproj directly. Open it in FilmCraft to see it.", file=sys.stderr)
+
+# ---------- commands ----------
+
+def cmd_new(args, client):
+    if client:
+        created = client.execute("file.newProject", {"name": args.name})
+        seq = client.execute("file.newSequence", {
+            "name": args.sequence or args.name, "width": args.width, "height": args.height,
+            "fps": args.fps, "video": args.video, "audio": args.audio,
+        })
+        saved = None
+        if args.project:
+            saved = client.execute("file.save", {"path": os.path.abspath(args.project)})
+        emit({"via": "control", "project": created, "sequence": seq, "saved": saved})
+        return
+    if not args.project:
+        fail("offline new needs -p PROJECT")
+    warn_offline()
+    project = blank_project(args.name, args.width, args.height, args.fps, args.video, args.audio, args.sequence)
+    save_project(args, project, "fc new %s" % args.name)
+    emit({"via": "file", "path": args.project, "sequence": project["view"]["active_sequence"]})
+
+def probe_media(path):
+    try:
+        raw = subprocess.check_output(
+            ["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", path],
+            stderr=subprocess.STDOUT,
+        )
+    except (OSError, subprocess.CalledProcessError) as e:
+        fail("ffprobe failed (%s); pass --duration --width --height --fps" % e)
+    return json.loads(raw)
+
+def add_media_file(project, path, name, duration, width, height, fps, sample_rate, channels, size, no_audio, still):
+    iid = alloc(project)
+    name = name or os.path.basename(path.replace("\\", "/"))
+    if fps:
+        rate = {"num": int(fps[0]), "den": int(fps[1])}
+    else:
+        rate = {"num": 24000, "den": 1001}
+    video = None
+    if width and height and not (still is False and width is None):
+        if width:
+            video = {
+                "width": width, "height": height, "frame_rate": rate, "par": [1, 1],
+                "codec": "unknown", "pixel_format": "unknown",
+                "color": {"matrix": "Bt709", "transfer": "Bt709", "primaries": "Bt709", "range": "Limited"},
+                "has_alpha": False, "bitrate": None,
+            }
+    streams = []
+    if not no_audio and channels:
+        streams.append({"sample_rate": sample_rate or 48000, "channels": channels, "codec": "unknown", "bits_per_sample": None})
+    kind = "Still" if still else ("AudioOnly" if video is None else "Movie")
+    item = {
+        "id": iid, "name": name, "label": "Iris",
+        "kind": {"Media": {
+            "media": {"File": {"path": path}},
+            "info": {
+                "name": name, "kind": kind, "duration": duration, "video": video,
+                "audio_streams": streams, "container": "", "start_timecode": None, "file_size": size,
+            },
+            "interpret": {"frame_rate": None, "par": None, "ignore_alpha": False, "invert_alpha": False},
+            "mark_in": None, "mark_out": None, "markers": [], "offline": False, "proxy": None,
+        }},
+        "metadata": {}, "created": iid,
+    }
+    project["project"]["items"][str(iid)] = item
+    project["project"]["root"]["children"].append({"Item": iid})
+    return iid
+
+def cmd_import(args, client):
+    paths = [os.path.abspath(p) if args.local else p for p in args.paths]
+    if client:
+        result = client.execute("file.import", {"paths": args.paths, "bin": args.bin} if args.bin else {"paths": args.paths})
+        emit({"via": "control", **(result if isinstance(result, dict) else {"result": result})})
+        return
+    if not args.project:
+        fail("offline import needs -p PROJECT")
+    warn_offline()
+    project = load_project(args.project)
+    ids = []
+    for path in paths:
+        if args.duration is None and not args.probe:
+            info = probe_media(args.probe or path)
+        elif args.probe:
+            info = probe_media(args.probe)
+        else:
+            info = None
+        if info:
+            dur = ticks(float(info["format"]["duration"]))
+            v = next((s for s in info["streams"] if s["codec_type"] == "video"), None)
+            a = next((s for s in info["streams"] if s["codec_type"] == "audio"), None)
+            w = h = None
+            fps = None
+            if v:
+                w, h = v["width"], v["height"]
+                fps = v.get("r_frame_rate", "24/1").split("/")
+                if len(fps) == 1:
+                    fps.append("1")
+            sr = int(a["sample_rate"]) if a else 48000
+            ch = int(a["channels"]) if a else 0
+            size = int(info["format"].get("size") or 0) or None
+            still = v is not None and v.get("codec_name") in ("png", "mjpeg", "jpeg", "bmp", "gif", "webp", "tiff") and not a and float(info["format"].get("duration") or 0) <= 0.05
+            ids.append(add_media_file(project, path, args.name, dur, w, h, fps, sr, ch, size, args.no_audio or not a, still))
+        else:
+            fps = str(Fraction(str(args.fps)).limit_denominator(1001)).split("/") if args.fps else ["24", "1"]
+            if len(fps) == 1:
+                fps.append("1")
+            ids.append(add_media_file(
+                project, path, args.name, ticks(args.duration), args.width, args.height, fps,
+                args.sr, 0 if args.no_audio else args.channels, args.size, args.no_audio, False,
+            ))
+    save_project(args, project, "fc import %s" % ids)
+    emit({"via": "file", "items": ids})
+
+def place_offline(project, items, vtrack, atrack, at, dur, fill, gain, no_audio):
+    seq, _ = active_sequence(project)
+    fps = seq["settings"]["frame_rate"]
+    video = find_track(seq, vtrack)
+    audio = find_track(seq, atrack)
+    t = ticks(at) if at is not None else max([c["start"] + c["duration"] for c in video["items"]] or [0])
+    placed = []
+    for item in items:
+        src = project["project"]["items"][str(item)]["kind"]["Media"]["info"]
+        length = snap(ticks(dur) if dur else src["duration"], fps)
+        while src["duration"] and length > src["duration"]:
+            length -= frame_ticks(fps)
+        if length <= 0:
+            fail("item %s has no duration to place" % item)
+        link = alloc(project)
+        vw = (src.get("video") or {}).get("width")
+        if vw:
+            sw = seq["settings"]["width"] / vw
+            sh = seq["settings"]["height"] / src["video"]["height"]
+            scale = (max if fill else min)(sw, sh) * 100
+            effects = video_effects(seq["settings"]["width"], seq["settings"]["height"], (vw / 2, src["video"]["height"] / 2), round(scale, 4))
+            clip = make_clip(project, item, snap(t, fps), length, 0, effects, link)
+            video["items"].append(clip)
+            placed.append(clip["id"])
+            if src["audio_streams"] and not no_audio:
+                aclip = make_clip(project, item, clip["start"], length, 0, audio_effects(), link)
+                aclip["gain_db"] = gain
+                audio["items"].append(aclip)
+                placed.append(aclip["id"])
+            else:
+                clip["link"] = None
+        else:
+            aclip = make_clip(project, item, snap(t, fps), length, 0, audio_effects(), None)
+            aclip["gain_db"] = gain
+            audio["items"].append(aclip)
+            placed.append(aclip["id"])
+        t = snap(t, fps) + length
+    return placed
+
+def cmd_add(args, client):
+    if client:
+        params = {"items": args.items, "track": args.vtrack, "audioTrack": args.atrack, "video": True, "audio": not args.no_audio}
+        if args.at is not None:
+            params["seconds"] = args.at
+        if args.dur is not None:
+            params["duration"] = {"seconds": args.dur}
+        result = client.execute("timeline.place", params)
+        if args.clip_db:
+            clips = (result or {}).get("clips") or []
+            client.execute("clip.audioGain", {"clips": clips, "mode": "set", "db": args.clip_db})
+        emit({"via": "control", "place": result})
+        return
+    if not args.project:
+        fail("offline add-clips needs -p PROJECT")
+    warn_offline()
+    project = load_project(args.project)
+    placed = place_offline(project, args.items, args.vtrack, args.atrack, args.at, args.dur, args.fill, args.clip_db, args.no_audio)
+    save_project(args, project, "fc add-clips %s" % args.items)
+    emit({"via": "file", "clips": placed})
+
+def cmd_music(args, client):
+    if client:
+        result = client.execute("timeline.place", {
+            "item": args.item, "track": args.track, "seconds": args.at, "video": False, "audio": True,
+            "sourceIn": {"seconds": args.inp}, "duration": {"seconds": args.out - args.inp},
+        })
+        clips = (result or {}).get("clips") or []
+        if args.db:
+            client.execute("clip.audioGain", {"clips": clips, "mode": "set", "db": args.db})
+        emit({"via": "control", "place": result})
+        return
+    if not args.project:
+        fail("offline music needs -p PROJECT")
+    warn_offline()
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    fps = seq["settings"]["frame_rate"]
+    track = find_track(seq, args.track)
+    dur = snap(ticks(args.out - args.inp), fps)
+    clip = make_clip(project, args.item, snap(ticks(args.at), fps), dur, snap(ticks(args.inp), fps), audio_effects(), None)
+    clip["gain_db"] = args.db
+    track["items"].append(clip)
+    save_project(args, project, "fc music %s" % args.item)
+    emit({"via": "file", "clip": clip["id"]})
+
+def pick_track(info, name):
+    video = not str(name).upper().startswith("A")
+    pool = info.get("video" if video else "audio") or []
+    for track in pool:
+        short = track.get("name", "").replace("Video ", "V").replace("Audio ", "A")
+        if track.get("name") == name or short == name or str(track.get("id")) == str(name):
+            return track, video
+    fail("no track %s" % name)
+
+def cuts_of(track):
+    clips = sorted(track["items"], key=lambda c: c["start"])
+    out = []
+    for a, b in zip(clips, clips[1:]):
+        end = a.get("end", a["start"] + a["duration"])
+        if end == b["start"]:
+            out.append((a, b))
+    return out
+
+def cmd_transition(args, client):
+    align = {"center": "center", "start": "start", "end": "end"}[args.align]
+    if client:
+        info = client.execute("sequence.inspect", {})
+        track, video = pick_track(info, args.track)
+        command = "sequence.applyVideoTransition" if video else "sequence.applyAudioTransition"
+        made = []
+        for _a, b in cuts_of(track):
+            if args.at is not None and abs(b["start"] / TPS - args.at) > 0.02:
+                continue
+            made.append(client.execute(command, {
+                "clip": b["clip"], "effect": args.effect, "frames": args.frames, "edge": "in", "align": align,
+            }))
+        emit({"via": "control", "transitions": made})
+        return
+    if not args.project:
+        fail("offline transition needs -p PROJECT")
+    warn_offline()
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    track = find_track(seq, args.track)
+    fps = seq["settings"]["frame_rate"]
+    dur = snap(args.frames * frame_ticks(fps), fps)
+    names = {"center": "CenterAtCut", "start": "StartAtCut", "end": "EndAtCut"}
+    n = 0
+    for a, b in cuts_of(track):
+        if args.at is not None and b["start"] != snap(ticks(args.at), fps):
+            continue
+        track["transitions"] = [z for z in track["transitions"] if not (z["from"] == a["id"] and z["to"] == b["id"])]
+        start = {"center": b["start"] - dur // 2, "start": b["start"], "end": b["start"] - dur}[args.align]
+        track["transitions"].append(transition(project, start, dur, a["id"], b["id"], names[args.align], args.effect))
+        n += 1
+    save_project(args, project, "fc transition x%s" % n)
+    emit({"via": "file", "count": n})
+
+def cmd_fade(args, client):
+    video = not args.track.upper().startswith("A")
+    effect = args.effect or ("cross_dissolve" if video else "constant_power")
+    command = "sequence.applyVideoTransition" if video else "sequence.applyAudioTransition"
+    if client:
+        info = client.execute("sequence.inspect", {})
+        track, _video = pick_track(info, args.track)
+        clips = sorted(track["items"], key=lambda c: c["start"])
+        if not clips:
+            fail("track empty")
+        frames = max(1, int(round(args.dur * (info["settings"]["frame_rate"]["num"] / info["settings"]["frame_rate"]["den"]))))
+        if args.direction == "in":
+            result = client.execute(command, {"clip": clips[0]["clip"], "effect": effect, "frames": frames, "edge": "in", "align": "start"})
+        else:
+            result = client.execute(command, {"clip": clips[-1]["clip"], "effect": effect, "frames": frames, "edge": "out", "align": "end"})
+        emit({"via": "control", "transition": result})
+        return
+    if not args.project:
+        fail("offline fade needs -p PROJECT")
+    warn_offline()
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    track = find_track(seq, args.track)
+    clips = sorted(track["items"], key=lambda c: c["start"])
+    if not clips:
+        fail("track empty")
+    dur = snap(ticks(args.dur), seq["settings"]["frame_rate"])
+    if args.direction == "in":
+        c = clips[0]
+        track["transitions"] = [z for z in track["transitions"] if not (z["from"] is None and z["to"] == c["id"])]
+        track["transitions"].append(transition(project, c["start"], dur, None, c["id"], "StartAtCut", effect))
+    else:
+        c = clips[-1]
+        end = c["start"] + c["duration"]
+        track["transitions"] = [z for z in track["transitions"] if not (z["to"] is None and z["from"] == c["id"])]
+        track["transitions"].append(transition(project, end - dur, dur, c["id"], None, "EndAtCut", effect))
+    save_project(args, project, "fc fade %s" % args.direction)
+    emit({"via": "file", "clip": c["id"]})
+
+def cmd_move(args, client):
+    if client:
+        result = client.execute("timeline.move", {"moves": [{"clip": args.clip, "track": args.track, "time": ticks(args.at)}], "insert": args.insert})
+        emit({"via": "control", "move": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    dest = find_track(seq, args.track)
+    for track in seq["video_tracks"] + seq["audio_tracks"]:
+        for clip in list(track["items"]):
+            if clip["id"] == args.clip:
+                track["items"].remove(clip)
+                clip["start"] = snap(ticks(args.at), seq["settings"]["frame_rate"])
+                dest["items"].append(clip)
+                save_project(args, project, "fc move %s" % args.clip)
+                warn_offline()
+                emit({"via": "file", "clip": args.clip})
+                return
+    fail("no clip %s" % args.clip)
+
+def cmd_trim(args, client):
+    if client:
+        result = client.execute("timeline.trim", {"clip": args.clip, "edge": args.edge, "mode": args.mode, "deltaFrames": args.frames})
+        emit({"via": "control", "trim": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    step = frame_ticks(seq["settings"]["frame_rate"]) * args.frames
+    for track in seq["video_tracks"] + seq["audio_tracks"]:
+        for clip in track["items"]:
+            if clip["id"] != args.clip:
+                continue
+            if args.edge == "in":
+                clip["start"] += step
+                clip["duration"] -= step
+                if not clip["reverse"]:
+                    clip["source_in"] += step
+            else:
+                clip["duration"] += step
+            if clip["duration"] <= 0:
+                fail("trim would remove the clip")
+            save_project(args, project, "fc trim %s" % args.clip)
+            warn_offline()
+            emit({"via": "file", "clip": args.clip, "duration": clip["duration"]})
+            return
+    fail("no clip %s" % args.clip)
+
+def cmd_delete(args, client):
+    if client:
+        result = client.execute("timeline.delete", {"clips": args.clips, "ripple": args.ripple})
+        emit({"via": "control", "delete": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    gone = set(args.clips)
+    for track in seq["video_tracks"] + seq["audio_tracks"]:
+        track["items"] = [c for c in track["items"] if c["id"] not in gone]
+        track["transitions"] = [t for t in track["transitions"] if t["from"] not in gone and t["to"] not in gone]
+    save_project(args, project, "fc delete %s" % args.clips)
+    warn_offline()
+    emit({"via": "file", "clips": args.clips})
+
+def cmd_razor(args, client):
+    if client:
+        result = client.execute("timeline.razor", {"time": ticks(args.at), "track": args.track} if args.track else {"time": ticks(args.at)})
+        emit({"via": "control", "razor": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    at = snap(ticks(args.at), seq["settings"]["frame_rate"])
+    tracks = [find_track(seq, args.track)] if args.track else seq["video_tracks"] + seq["audio_tracks"]
+    made = []
+    for track in tracks:
+        for clip in list(track["items"]):
+            if clip["start"] < at < clip["start"] + clip["duration"]:
+                right = json.loads(json.dumps(clip))
+                right["id"] = alloc(project)
+                right["start"] = at
+                right["duration"] = clip["start"] + clip["duration"] - at
+                right["source_in"] = clip["source_in"] + (at - clip["start"])
+                clip["duration"] = at - clip["start"]
+                track["items"].append(right)
+                made.append(right["id"])
+    save_project(args, project, "fc razor")
+    warn_offline()
+    emit({"via": "file", "clips": made})
+
+def cmd_effect(args, client):
+    if client:
+        if args.param is None:
+            result = client.execute("effects.apply", {"clips": [args.clip], "effect": args.effect})
+        else:
+            result = client.execute("effects.setParam", {"clip": args.clip, "effect": args.effect, "param": args.param, "value": parse_value(args.value)})
+        emit({"via": "control", "effect": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    for track in seq["video_tracks"] + seq["audio_tracks"]:
+        for clip in track["items"]:
+            if clip["id"] != args.clip:
+                continue
+            if args.param is None:
+                clip["effects"].append({"effect": args.effect, "enabled": True, "params": {}})
+            else:
+                set_param(clip["effects"], args.effect, args.param, parse_value(args.value))
+            save_project(args, project, "fc effect %s" % args.effect)
+            warn_offline()
+            emit({"via": "file", "clip": args.clip})
+            return
+    fail("no clip %s" % args.clip)
+
+def cmd_keyframe(args, client):
+    value = parse_value(args.value)
+    if client:
+        result = client.execute("effects.setParam", {
+            "clip": args.clip, "effect": args.effect, "param": args.param, "value": value,
+            "seconds": args.at, "keyframe": True,
+        })
+        if args.interpolation:
+            client.execute("effects.setInterpolation", {
+                "clip": args.clip, "effect": args.effect, "param": args.param,
+                "seconds": args.at, "interpolation": args.interpolation,
+            })
+        emit({"via": "control", "keyframe": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    for track in seq["video_tracks"] + seq["audio_tracks"]:
+        for clip in track["items"]:
+            if clip["id"] != args.clip:
+                continue
+            set_param(clip["effects"], args.effect, args.param, value if isinstance(value, dict) else {"Float": value})
+            param = next(e["params"][args.param] for e in clip["effects"] if e["effect"] == args.effect)
+            param.setdefault("keyframes", []).append({
+                "time": snap(ticks(args.at), seq["settings"]["frame_rate"]) - clip["start"],
+                "value": param["value"], "interp": args.interpolation or "Linear",
+            })
+            save_project(args, project, "fc keyframe")
+            warn_offline()
+            emit({"via": "file", "clip": args.clip})
+            return
+    fail("no clip %s" % args.clip)
+
+def cmd_volume(args, client):
+    if client:
+        params = {"mode": "set", "db": args.db}
+        if args.clip is not None:
+            params["clips"] = [args.clip]
+        elif args.track:
+            info = client.execute("sequence.inspect", {})
+            track, _video = pick_track(info, args.track)
+            params["clips"] = [c["clip"] for c in track["items"]]
+        result = client.execute("clip.audioGain", params)
+        emit({"via": "control", "gain": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    n = 0
+    tracks = [find_track(seq, args.track)] if args.track else seq["audio_tracks"]
+    for track in tracks:
+        for clip in track["items"]:
+            if args.clip is None or clip["id"] == args.clip:
+                clip["gain_db"] = args.db
+                n += 1
+    save_project(args, project, "fc volume")
+    warn_offline()
+    emit({"via": "file", "clips": n})
+
+def cmd_text(args, client):
+    if client:
+        params = {"text": args.text, "seconds": args.dur, "size": args.size, "newClip": True}
+        if args.start is not None:
+            params["time"] = ticks(args.start)
+        if args.font:
+            params["font"] = args.font
+        if args.track:
+            params["track"] = int(args.track[1:]) - 1 if args.track[:1].upper() == "V" and args.track[1:].isdigit() else args.track
+        if args.y is not None:
+            info = client.execute("sequence.inspect", {})
+            params["position"] = [info["settings"]["width"] / 2, args.y]
+        result = client.execute("graphics.newText", params)
+        if args.fade and result and "clip" in result:
+            frames = max(1, int(round(args.fade * 30)))
+            client.execute("sequence.applyVideoTransition", {"clip": result["clip"], "effect": "cross_dissolve", "frames": frames, "edge": "in", "align": "start"})
+            client.execute("sequence.applyVideoTransition", {"clip": result["clip"], "effect": "cross_dissolve", "frames": frames, "edge": "out", "align": "end"})
+        emit({"via": "control", "text": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    ss = seq["settings"]
+    gid = None
+    for item in project["project"]["items"].values():
+        g = item["kind"].get("Graphic")
+        if g and g["width"] == ss["width"] and g["height"] == ss["height"]:
+            gid = item["id"]
+    if gid is None:
+        gid = alloc(project)
+        project["project"]["items"][str(gid)] = {
+            "id": gid, "name": "Graphic", "label": "Rose",
+            "kind": {"Graphic": {"width": ss["width"], "height": ss["height"], "rate": ss["frame_rate"]}},
+            "metadata": {}, "created": gid,
+        }
+        project["project"]["root"]["children"].append({"Item": gid})
+    track = find_track(seq, args.track)
+    start = snap(ticks(args.start), ss["frame_rate"])
+    dur = snap(ticks(args.dur), ss["frame_rate"])
+    clip = make_clip(project, gid, start, dur, 0, video_effects(ss["width"], ss["height"], (ss["width"] / 2, ss["height"] / 2), 100), None, "Text")
+    y = args.y if args.y is not None else ss["height"] * 0.85
+    text_fx = {"effect": "graphic_text", "enabled": True, "params": {}}
+    for key, val in {
+        "text": {"Text": args.text}, "size": {"Float": args.size}, "font": {"Text": args.font},
+        "position": {"Vec2": {"x": ss["width"] / 2, "y": y}},
+        "fill_color": {"Color": [1.0, 1.0, 1.0, 1.0]}, "fill_kind": {"Choice": 0},
+    }.items():
+        text_fx["params"][key] = {"value": val}
+    clip["effects"].append(text_fx)
+    track["items"].append(clip)
+    if args.fade:
+        d = snap(ticks(args.fade), ss["frame_rate"])
+        track["transitions"] += [
+            transition(project, start, d, None, clip["id"], "StartAtCut", "cross_dissolve"),
+            transition(project, start + dur - d, d, clip["id"], None, "EndAtCut", "cross_dissolve"),
+        ]
+    save_project(args, project, "fc text")
+    warn_offline()
+    emit({"via": "file", "clip": clip["id"], "item": gid})
+
+def cmd_caption(args, client):
+    if client:
+        params = {"text": args.text, "seconds": args.start, "durationSeconds": args.dur}
+        if args.track:
+            params["track"] = args.track
+        result = client.execute("captions.add", params)
+        emit({"via": "control", "caption": result})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    tracks = seq["caption_tracks"]
+    track = None
+    if args.track:
+        for t in tracks:
+            if t["name"] == args.track or str(t["id"]) == args.track:
+                track = t
+    if track is None:
+        track = {
+            "id": alloc(project), "name": args.track or "Subtitle", "format": "Subtitle", "language": "zh",
+            "style": {
+                "font": "Microsoft JhengHei", "size": 54, "color": [255, 255, 255, 255], "background": True,
+                "background_color": [0, 0, 0, 191], "align": "Center", "anchor": "Bottom", "margin": 0.08,
+                "line_spacing": 1.25, "outline": 0, "outline_color": [0, 0, 0, 255], "font_style": "SemiBold",
+            },
+            "enabled": True, "locked": False, "sync_lock": True, "captions": [], "vtt_blocks": [],
+        }
+        tracks.insert(0, track)
+    fps = seq["settings"]["frame_rate"]
+    cap = {"id": alloc(project), "start": snap(ticks(args.start), fps), "duration": snap(ticks(args.dur), fps), "text": args.text, "settings": ""}
+    track["captions"].append(cap)
+    save_project(args, project, "fc caption")
+    warn_offline()
+    emit({"via": "file", "caption": cap["id"], "track": track["id"]})
+
+def cmd_sequence(args, client):
+    params = {}
+    for key, dest in (("width", "width"), ("height", "height"), ("fps", "fps"), ("name", "name"), ("sample_rate", "sampleRate")):
+        val = getattr(args, key)
+        if val is not None:
+            params[dest] = val
+    if client:
+        emit({"via": "control", "settings": client.execute("sequence.settings", params)})
+        return
+    project = load_project(args.project)
+    seq, _ = active_sequence(project)
+    if args.width:
+        seq["settings"]["width"] = args.width
+    if args.height:
+        seq["settings"]["height"] = args.height
+    if args.fps:
+        seq["settings"]["frame_rate"] = {"num": int(args.fps), "den": 1} if float(args.fps) == int(args.fps) else {"num": int(round(args.fps * 1000)), "den": 1000}
+    if args.name:
+        for item in project["project"]["items"].values():
+            if item["kind"].get("Sequence") is seq:
+                item["name"] = args.name
+    if args.sample_rate:
+        seq["settings"]["sample_rate"] = args.sample_rate
+    save_project(args, project, "fc sequence")
+    warn_offline()
+    emit({"via": "file", "settings": seq["settings"]})
+
+def cmd_export(args, client):
+    if not client:
+        fail("export needs FilmCraft listening on the control port")
+    if args.open:
+        client.execute("file.open", {"path": args.open})
+    params = {
+        "path": args.output, "format": args.format, "bitrateKbps": args.kbps, "bitrateMode": args.bitrate_mode,
+        "audioCodec": args.audio_codec, "wait": False,
+    }
+    if args.end is not None:
+        params.update(range="custom", startSeconds=args.start, endSeconds=args.end)
+    started = client.execute("file.exportMedia", params)
+    if not args.wait:
+        emit({"via": "control", "export": started, "poll": "jobs.list"})
+        return
+    import time
+    job_id = started.get("job") if isinstance(started, dict) else None
+    deadline = time.time() + args.timeout
+    while time.time() < deadline:
+        listed = client.execute("jobs.list", {})
+        jobs = listed if isinstance(listed, list) else (listed or {}).get("jobs") or []
+        mine = [j for j in jobs if job_id is None or j.get("id") == job_id]
+        if job_id is not None and not mine:
+            time.sleep(args.poll)
+            continue
+        if mine and all(j.get("finished") for j in mine):
+            bad = [j for j in mine if isinstance(j.get("result"), dict) and j["result"].get("error")]
+            if bad:
+                fail(bad[0]["result"]["error"])
+            emit({"via": "control", "export": started, "jobs": mine})
+            return
+        time.sleep(args.poll)
+    fail("export still running after %ss" % args.timeout)
+
+def cmd_frame(args, client):
+    if not client:
+        fail("frame export needs FilmCraft listening on the control port")
+    result = client.execute("file.exportFrame", {
+        "path": args.output, "format": args.format, "target": args.target, "time": ticks(args.at),
+    })
+    emit({"via": "control", "frame": result})
+
+def cmd_show(args, client):
+    if client:
+        emit({"via": "control", "project": client.execute("project.inspect", {}), "sequence": client.execute("sequence.inspect", {})})
+        return
+    project = load_project(args.project)
+    seq, sid = active_sequence(project)
+    emit({"via": "file", "sequence": sid, "items": [
+        {"id": it["id"], "name": it["name"], "kind": list(it["kind"])[0]} for it in project["project"]["items"].values()
+    ], "video": seq["video_tracks"], "audio": seq["audio_tracks"], "captions": seq.get("caption_tracks") or []})
+
+def cmd_media_status(args, client):
+    if client:
+        emit({"via": "control", "status": client.execute("media.status", {"item": args.item} if args.item else {}), "missing": client.execute("media.findMissing", {})})
+        return
+    project = load_project(args.project)
+    rows = []
+    for item in project["project"]["items"].values():
+        media = item["kind"].get("Media")
+        if not media:
+            continue
+        ref = media["media"].get("File", {}).get("path")
+        rows.append({"item": item["id"], "name": item["name"], "path": ref, "offline": media["offline"], "found": bool(ref) and os.path.exists(ref)})
+    emit({"via": "file", "items": rows})
+
+def cmd_jobs(args, client):
+    if not client:
+        fail("jobs.list needs FilmCraft listening on the control port")
+    emit({"via": "control", "jobs": client.execute("jobs.list", {})})
+
+def cmd_status(args, client):
+    if not client:
+        fail("status needs FilmCraft listening on the control port")
+    emit({"via": "control", "sequence": client.execute("sequence.inspect", {}), "missing": client.execute("media.findMissing", {}), "jobs": client.execute("jobs.list", {})})
+
+def cmd_exec(args, client):
+    if not client:
+        fail("exec needs FilmCraft listening on the control port")
+    params = {}
+    if args.json:
+        params = json.loads(args.json)
+    for pair in args.pairs:
+        key, _, val = pair.partition("=")
+        nest_key(params, key, parse_value(val))
+    emit({"via": "control", "command": args.command, "result": client.execute(args.command, params)})
+
+def cmd_commands(args, client):
+    if not client:
+        fail("commands needs FilmCraft listening on the control port")
+    listed = client.call("engine.commands")
+    if args.filter:
+        needle = args.filter.lower()
+        listed = [c for c in listed if needle in json.dumps(c, ensure_ascii=False).lower()]
+    emit({"via": "control", "commands": listed})
+
+def cmd_batch(args, client):
+    if not client:
+        fail("batch needs FilmCraft listening on the control port")
+    steps = json.load(open(args.file, encoding="utf-8"))
+    try:
+        result = client.call("engine.batch", {"steps": steps, "stopOnError": not args.keep_going})
+        emit({"via": "control", "batch": result})
+        return
+    except ControlError as e:
+        if "unknown method" not in str(e):
+            fail(e)
+    results = []
+    failed = 0
+    for step in steps:
+        command = step.get("command") or step.get("id")
+        try:
+            results.append({"ok": True, "command": command, "result": client.execute(command, step.get("params") or {})})
+        except ControlError as e:
+            failed += 1
+            results.append({"ok": False, "command": command, "error": str(e)})
+            if not args.keep_going:
+                break
+    emit({"via": "control", "batch": {"completed": len(results) - failed, "failed": failed, "results": results, "fallback": "engine.execute"}})
+
+def cmd_open(args, client):
+    if not client:
+        fail("open needs FilmCraft listening on the control port")
+    emit({"via": "control", "open": client.execute("file.open", {"path": args.path})})
+
+def cmd_save(args, client):
+    if not client:
+        if args.project and os.path.isfile(args.project):
+            emit({"via": "file", "path": os.path.abspath(args.project), "note": "the file is already the saved project"})
+            return
+        fail("save needs FilmCraft listening on the control port")
+    params = {"path": os.path.abspath(args.path)} if args.path else {}
+    emit({"via": "control", "save": client.execute("file.saveAs" if args.save_as else "file.save", params)})
+
+def cmd_validate(args, client):
+    del client
+    import pathlib
+    schema_path = os.path.join(HERE, "schema", "fcproj.schema.json")
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError:
+        fail("jsonschema is not installed")
+    schema = json.load(open(schema_path, encoding="utf-8"))
+    doc = load_project(args.project)
+    errors = sorted(Draft202012Validator(schema).iter_errors(doc), key=lambda e: list(e.path))
+    if errors:
+        fail("; ".join("/".join(map(str, e.path)) + ": " + e.message.splitlines()[0] for e in errors[:12]))
+    emit({"via": "file", "valid": True, "schema": str(pathlib.Path(schema_path))})
+
+def add_common(parser, with_defaults):
+    """Shared flags.
+
+    Subparsers must use default=SUPPRESS. A real default on the subparser
+    replaces a flag the user already passed before the command name, which
+    sent --port and --offline back to 9877 / live mode.
+    """
+    def d(value):
+        return value if with_defaults else argparse.SUPPRESS
+    parser.add_argument("-p", "--project", default=d(os.environ.get("FC_PROJECT")))
+    parser.add_argument("--port", type=int, default=d(int(os.environ.get("FC_PORT") or os.environ.get("FILMCRAFT_CONTROL_PORT") or 9877)))
+    parser.add_argument("--host", default=d("127.0.0.1"))
+    parser.add_argument("--token", default=d(None), help="64 hex chars; else FILMCRAFT_CONTROL_TOKEN or %%TEMP%%\\fc1104.tok")
+    parser.add_argument("--offline", action="store_true", default=d(False), help="edit the .fcproj even if FilmCraft is running")
+    parser.add_argument("--no-git", action="store_true", default=d(False))
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="fc", description=__doc__)
+    add_common(p, True)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    def add(name, fn, **kw):
+        x = sub.add_parser(name, help=kw.get("help"))
+        add_common(x, False)
+        x.set_defaults(fn=fn)
+        return x
+    x = add("new", cmd_new, help="create a project and a sequence")
+    x.add_argument("name"); x.add_argument("--sequence"); x.add_argument("--width", type=int, default=1920)
+    x.add_argument("--height", type=int, default=1080); x.add_argument("--fps", type=float, default=24)
+    x.add_argument("--video", type=int, default=2); x.add_argument("--audio", type=int, default=3)
+    x = add("open", cmd_open); x.add_argument("path")
+    x = add("save", cmd_save); x.add_argument("path", nargs="?"); x.add_argument("--save-as", action="store_true")
+    x = add("import", cmd_import, help="import media into the open project")
+    x.add_argument("paths", nargs="+"); x.add_argument("--name"); x.add_argument("--bin", type=int)
+    x.add_argument("--probe"); x.add_argument("--duration", type=float); x.add_argument("--width", type=int)
+    x.add_argument("--height", type=int); x.add_argument("--fps", type=float); x.add_argument("--sr", type=int, default=48000)
+    x.add_argument("--channels", type=int, default=2); x.add_argument("--size", type=int)
+    x.add_argument("--no-audio", action="store_true"); x.add_argument("--local", action="store_true", help="send absolute paths (offline import)")
+    x = add("media", cmd_import, help="alias of import")
+    x.add_argument("paths", nargs="+"); x.add_argument("--name"); x.add_argument("--bin", type=int)
+    x.add_argument("--probe"); x.add_argument("--duration", type=float); x.add_argument("--width", type=int)
+    x.add_argument("--height", type=int); x.add_argument("--fps", type=float); x.add_argument("--sr", type=int, default=48000)
+    x.add_argument("--channels", type=int, default=2); x.add_argument("--size", type=int)
+    x.add_argument("--no-audio", action="store_true"); x.add_argument("--local", action="store_true")
+    x = add("add-clips", cmd_add); x.add_argument("items", type=int, nargs="+"); x.add_argument("--vtrack", default="V1")
+    x.add_argument("--atrack", default="A1"); x.add_argument("--at", type=float); x.add_argument("--dur", type=float)
+    x.add_argument("--fill", action="store_true"); x.add_argument("--clip-db", type=float, default=0.0)
+    x.add_argument("--no-audio", action="store_true")
+    x = add("music", cmd_music); x.add_argument("item", type=int); x.add_argument("--in", dest="inp", type=float, required=True)
+    x.add_argument("--out", type=float, required=True); x.add_argument("--at", type=float, default=0)
+    x.add_argument("--track", default="A2"); x.add_argument("--db", type=float, default=0.0)
+    x = add("move", cmd_move); x.add_argument("clip", type=int); x.add_argument("--track", required=True)
+    x.add_argument("--at", type=float, required=True); x.add_argument("--insert", action="store_true")
+    x = add("trim", cmd_trim); x.add_argument("clip", type=int); x.add_argument("--edge", choices=["in", "out"], required=True)
+    x.add_argument("--frames", type=int, required=True); x.add_argument("--mode", choices=["regular", "ripple"], default="regular")
+    x = add("delete", cmd_delete); x.add_argument("clips", type=int, nargs="+"); x.add_argument("--ripple", action="store_true")
+    x = add("razor", cmd_razor); x.add_argument("--at", type=float, required=True); x.add_argument("--track")
+    x = add("transition", cmd_transition); x.add_argument("--dur", type=float, default=0.5); x.add_argument("--frames", type=int)
+    x.add_argument("--effect", default="cross_dissolve"); x.add_argument("--align", choices=["center", "start", "end"], default="center")
+    x.add_argument("--track", default="V1"); x.add_argument("--at", type=float)
+    x = add("fade", cmd_fade); x.add_argument("direction", choices=["in", "out"]); x.add_argument("--dur", type=float, default=1.0)
+    x.add_argument("--track", default="V1"); x.add_argument("--effect")
+    x = add("effect", cmd_effect); x.add_argument("clip", type=int); x.add_argument("effect")
+    x.add_argument("--param"); x.add_argument("--value")
+    x = add("keyframe", cmd_keyframe); x.add_argument("clip", type=int); x.add_argument("effect"); x.add_argument("param")
+    x.add_argument("--at", type=float, required=True); x.add_argument("--value", required=True)
+    x.add_argument("--interpolation", choices=["linear", "hold", "bezier", "autoBezier", "continuousBezier", "easeIn", "easeOut"])
+    x = add("volume", cmd_volume); x.add_argument("--db", type=float, required=True); x.add_argument("--track", default="A1")
+    x.add_argument("--clip", type=int)
+    x = add("text", cmd_text); x.add_argument("text"); x.add_argument("--start", type=float, required=True)
+    x.add_argument("--dur", type=float, required=True); x.add_argument("--track", default="V2")
+    x.add_argument("--size", type=float, default=72); x.add_argument("--font", default="Microsoft JhengHei")
+    x.add_argument("--y", type=float); x.add_argument("--fade", type=float, default=0)
+    x = add("caption", cmd_caption); x.add_argument("text"); x.add_argument("--start", type=float, required=True)
+    x.add_argument("--dur", type=float, required=True); x.add_argument("--track")
+    x = add("sequence", cmd_sequence, help="sequence settings"); x.add_argument("--width", type=int)
+    x.add_argument("--height", type=int); x.add_argument("--fps", type=float); x.add_argument("--name")
+    x.add_argument("--sample-rate", type=int)
+    x = add("export", cmd_export); x.add_argument("output"); x.add_argument("--open", help="file.open this project first")
+    x.add_argument("--start", type=float, default=0); x.add_argument("--end", type=float); x.add_argument("--kbps", type=int, default=16000)
+    x.add_argument("--format", default="h264"); x.add_argument("--bitrate-mode", default="vbr1Pass")
+    x.add_argument("--audio-codec", default="aac"); x.add_argument("--wait", action="store_true")
+    x.add_argument("--poll", type=float, default=1); x.add_argument("--timeout", type=float, default=3600)
+    x = add("frame", cmd_frame, help="export one frame"); x.add_argument("output"); x.add_argument("--at", type=float, required=True)
+    x.add_argument("--format", default="png"); x.add_argument("--target", choices=["program", "source"], default="program")
+    add("show", cmd_show, help="project tree and the active sequence")
+    x = add("media-status", cmd_media_status); x.add_argument("--item", type=int)
+    add("jobs", cmd_jobs, help="export and background job progress")
+    add("status", cmd_status, help="sequence, missing media and jobs")
+    x = add("exec", cmd_exec, help="run any engine command"); x.add_argument("command"); x.add_argument("json", nargs="?")
+    x.add_argument("pairs", nargs="*", help="key=value (JSON when it parses)")
+    x = add("commands", cmd_commands); x.add_argument("--filter")
+    x = add("batch", cmd_batch); x.add_argument("file"); x.add_argument("--keep-going", action="store_true")
+    add("validate", cmd_validate, help="check the .fcproj against the schema")
+    return p
+
+def main(argv=None):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    args = build_parser().parse_args(argv)
+    if getattr(args, "frames", None) is None and getattr(args, "dur", None) and args.cmd == "transition":
+        args.frames = max(1, int(round(args.dur * (args.fps if hasattr(args, "fps") and args.fps else 24))))
+    if args.cmd == "transition" and args.frames is None:
+        args.frames = max(1, int(round(args.dur * 24)))
+    client = None
+    if not args.offline and port_open(args.host, args.port):
+        client = Client(args.host, args.port, load_token(args.token))
+    try:
+        args.fn(args, client)
+    except Offline:
+        fail("the control port closed while the command was running")
+    except ControlError as e:
+        fail(e)
+    except BrokenPipeError:
+        fail("the control port closed the connection")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,747 @@
+{
+ "project_settings": {
+  "renderer": "FilmCraft GPU Acceleration (wgpu)",
+  "video_display": "Timecode",
+  "audio_display_samples": true,
+  "default_still_duration": 1270080000000,
+  "default_transition_duration_frames": 24,
+  "default_audio_transition_duration": 254016000000,
+  "ingest": {
+   "enabled": false,
+   "action": "createProxies",
+   "destination": null,
+   "preset": ""
+  },
+  "title_safe": [
+   20.0,
+   20.0
+  ],
+  "action_safe": [
+   10.0,
+   10.0
+  ],
+  "capture_format": "DV",
+  "scratch": {
+   "captured": null,
+   "videoPreviews": null,
+   "audioPreviews": null,
+   "autoSave": null
+  }
+ },
+ "video_effects": [
+  {
+   "effect": "motion",
+   "enabled": true,
+   "params": {
+    "anchor": {
+     "value": {
+      "Vec2": {
+       "x": 640.0,
+       "y": 360.0
+      }
+     }
+    },
+    "anti_flicker": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "position": {
+     "value": {
+      "Vec2": {
+       "x": 960.0,
+       "y": 540.0
+      }
+     }
+    },
+    "rotation": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "scale": {
+     "value": {
+      "Float": 150.0
+     }
+    },
+    "scale_width": {
+     "value": {
+      "Float": 100.0
+     }
+    },
+    "uniform_scale": {
+     "value": {
+      "Bool": true
+     }
+    }
+   }
+  },
+  {
+   "effect": "opacity",
+   "enabled": true,
+   "params": {
+    "blend": {
+     "value": {
+      "Choice": 0
+     }
+    },
+    "opacity": {
+     "value": {
+      "Float": 100.0
+     }
+    }
+   }
+  },
+  {
+   "effect": "time_remap",
+   "enabled": true,
+   "params": {
+    "speed": {
+     "value": {
+      "Float": 100.0
+     }
+    }
+   }
+  }
+ ],
+ "audio_effects": [
+  {
+   "effect": "volume",
+   "enabled": true,
+   "params": {
+    "bypass": {
+     "value": {
+      "Bool": false
+     }
+    },
+    "level": {
+     "value": {
+      "Float": 0.0
+     }
+    }
+   }
+  },
+  {
+   "effect": "channel_volume",
+   "enabled": true,
+   "params": {
+    "bypass": {
+     "value": {
+      "Bool": false
+     }
+    },
+    "left": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "right": {
+     "value": {
+      "Float": 0.0
+     }
+    }
+   }
+  },
+  {
+   "effect": "panner",
+   "enabled": true,
+   "params": {
+    "balance": {
+     "value": {
+      "Float": 0.0
+     }
+    }
+   }
+  }
+ ],
+ "track": {
+  "locked": false,
+  "sync_lock": true,
+  "enabled": true,
+  "muted": false,
+  "solo": false,
+  "channels": "Stereo",
+  "volume_db": 0.0,
+  "pan": 0.0,
+  "effects": [],
+  "mixer": {
+   "mode": "Read",
+   "output": null,
+   "record_arm": false,
+   "solo_safe": false,
+   "input_map": "Stereo"
+  }
+ },
+ "seq_settings": {
+  "width": 1920,
+  "height": 1080,
+  "frame_rate": {
+   "num": 60,
+   "den": 1
+  },
+  "par": [
+   1,
+   1
+  ],
+  "sample_rate": 48000,
+  "drop_frame": false,
+  "preset": "1920x1080 60",
+  "audio_master": "Stereo",
+  "preview_codec": "ProRes 422",
+  "max_bit_depth": false,
+  "max_render_quality": false,
+  "working_space": "Rec. 709",
+  "color": {
+   "working": "Rec709",
+   "wide_gamut": false,
+   "auto_tone_map": true
+  }
+ },
+ "seq_rest": {
+  "markers": [],
+  "mark_in": null,
+  "mark_out": null,
+  "work_area": null,
+  "start_timecode": 0,
+  "master_volume_db": 0.0,
+  "master_effects": [],
+  "master_mixer": {
+   "mode": "Read",
+   "output": null,
+   "record_arm": false,
+   "solo_safe": false,
+   "input_map": "Stereo"
+  },
+  "submix_tracks": [],
+  "caption_tracks": []
+ },
+ "media_item": {
+  "id": 1,
+  "name": "1.mp4",
+  "label": "Iris",
+  "kind": {
+   "Media": {
+    "media": {
+     "File": {
+      "path": "C:\\Users\\wuyou\\Desktop\\1104\\1.mp4"
+     }
+    },
+    "info": {
+     "name": "1.mp4",
+     "kind": "Movie",
+     "duration": 3820824000000,
+     "video": {
+      "width": 1280,
+      "height": 720,
+      "frame_rate": {
+       "num": 24,
+       "den": 1
+      },
+      "par": [
+       1,
+       1
+      ],
+      "codec": "H.264 (High)",
+      "pixel_format": "YUV 4:2:0 8-bit",
+      "color": {
+       "matrix": "Bt709",
+       "transfer": "Bt709",
+       "primaries": "Bt709",
+       "range": "Limited"
+      },
+      "has_alpha": false,
+      "bitrate": 7392145
+     },
+     "audio_streams": [
+      {
+       "sample_rate": 48000,
+       "channels": 2,
+       "codec": "AAC",
+       "bits_per_sample": null
+      }
+     ],
+     "container": "MPEG-4",
+     "start_timecode": null,
+     "file_size": 14219698
+    },
+    "interpret": {
+     "frame_rate": null,
+     "par": null,
+     "ignore_alpha": false,
+     "invert_alpha": false
+    },
+    "mark_in": null,
+    "mark_out": null,
+    "markers": [],
+    "offline": false,
+    "proxy": null,
+    "identity": {
+     "size": 14219698,
+     "fingerprint": "d68d4fde975449bf"
+    }
+   }
+  },
+  "metadata": {},
+  "created": 1
+ },
+ "audio_item": {
+  "id": 5,
+  "name": "bgm_source.mp3",
+  "label": "Caribbean",
+  "kind": {
+   "Media": {
+    "media": {
+     "File": {
+      "path": "C:\\Users\\wuyou\\Desktop\\1104\\bgm_source.mp3"
+     }
+    },
+    "info": {
+     "name": "bgm_source.mp3",
+     "kind": "AudioOnly",
+     "duration": 54762946560000,
+     "video": null,
+     "audio_streams": [
+      {
+       "sample_rate": 44100,
+       "channels": 2,
+       "codec": "MP3",
+       "bits_per_sample": null
+      }
+     ],
+     "container": "MP3",
+     "start_timecode": null,
+     "file_size": 8618303
+    },
+    "interpret": {
+     "frame_rate": null,
+     "par": null,
+     "ignore_alpha": false,
+     "invert_alpha": false
+    },
+    "mark_in": null,
+    "mark_out": null,
+    "markers": [],
+    "offline": false,
+    "proxy": null,
+    "identity": {
+     "size": 8618303,
+     "fingerprint": "52fafd8f0c22ebb9"
+    }
+   }
+  },
+  "metadata": {},
+  "created": 5
+ },
+ "text_effects": [
+  {
+   "effect": "motion",
+   "enabled": true,
+   "params": {
+    "anchor": {
+     "value": {
+      "Vec2": {
+       "x": 960.0,
+       "y": 432.0
+      }
+     }
+    },
+    "anti_flicker": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "position": {
+     "value": {
+      "Vec2": {
+       "x": 960.0,
+       "y": 432.0
+      }
+     }
+    },
+    "rotation": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "scale": {
+     "value": {
+      "Float": 100.0
+     }
+    },
+    "scale_width": {
+     "value": {
+      "Float": 100.0
+     }
+    },
+    "uniform_scale": {
+     "value": {
+      "Bool": true
+     }
+    }
+   }
+  },
+  {
+   "effect": "opacity",
+   "enabled": true,
+   "params": {
+    "blend": {
+     "value": {
+      "Choice": 0
+     }
+    },
+    "opacity": {
+     "value": {
+      "Float": 100.0
+     }
+    }
+   }
+  },
+  {
+   "effect": "time_remap",
+   "enabled": true,
+   "params": {
+    "speed": {
+     "value": {
+      "Float": 100.0
+     }
+    }
+   }
+  },
+  {
+   "effect": "graphic_text",
+   "enabled": true,
+   "params": {
+    "align": {
+     "value": {
+      "Choice": 1
+     }
+    },
+    "anchor": {
+     "value": {
+      "Vec2": {
+       "x": 0.0,
+       "y": 0.0
+      }
+     }
+    },
+    "background": {
+     "value": {
+      "Bool": false
+     }
+    },
+    "background_color": {
+     "value": {
+      "Color": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ]
+     }
+    },
+    "background_opacity": {
+     "value": {
+      "Float": 75.0
+     }
+    },
+    "background_radius": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "background_size": {
+     "value": {
+      "Float": 12.0
+     }
+    },
+    "baseline_shift": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "box_height": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "box_width": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "caps": {
+     "value": {
+      "Choice": 0
+     }
+    },
+    "faux_bold": {
+     "value": {
+      "Bool": true
+     }
+    },
+    "faux_italic": {
+     "value": {
+      "Bool": false
+     }
+    },
+    "fill": {
+     "value": {
+      "Bool": true
+     }
+    },
+    "fill_color": {
+     "value": {
+      "Color": [
+       1.0,
+       1.0,
+       1.0,
+       1.0
+      ]
+     }
+    },
+    "fill_kind": {
+     "value": {
+      "Choice": 1
+     }
+    },
+    "font": {
+     "value": {
+      "Text": "Microsoft JhengHei"
+     }
+    },
+    "font_style": {
+     "value": {
+      "Text": "Bold"
+     }
+    },
+    "gradient_angle": {
+     "value": {
+      "Float": 90.0
+     }
+    },
+    "gradient_end": {
+     "value": {
+      "Color": [
+       1.0,
+       0.50980395,
+       0.11764706,
+       1.0
+      ]
+     }
+    },
+    "gradient_start": {
+     "value": {
+      "Color": [
+       1.0,
+       0.8627451,
+       0.3529412,
+       1.0
+      ]
+     }
+    },
+    "kerning": {
+     "value": {
+      "Bool": true
+     }
+    },
+    "leading": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "ligatures": {
+     "value": {
+      "Bool": true
+     }
+    },
+    "name": {
+     "value": {
+      "Text": ""
+     }
+    },
+    "opacity": {
+     "value": {
+      "Float": 100.0
+     }
+    },
+    "position": {
+     "value": {
+      "Vec2": {
+       "x": 960.0,
+       "y": 225.0
+      }
+     },
+     "keyframes": [
+      {
+       "time": 0,
+       "value": {
+        "Vec2": {
+         "x": 960.0,
+         "y": 265.0
+        }
+       },
+       "interp": "Linear",
+       "out_influence": 0.3333333333333333,
+       "in_influence": 0.3333333333333333
+      },
+      {
+       "time": 114307200000,
+       "value": {
+        "Vec2": {
+         "x": 960.0,
+         "y": 225.0
+        }
+       },
+       "interp": "Linear",
+       "out_influence": 0.3333333333333333,
+       "in_influence": 0.3333333333333333
+      }
+     ]
+    },
+    "rotation": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "scale": {
+     "value": {
+      "Float": 100.0
+     }
+    },
+    "scale_width": {
+     "value": {
+      "Float": 100.0
+     }
+    },
+    "shadow": {
+     "value": {
+      "Bool": true
+     }
+    },
+    "shadow_angle": {
+     "value": {
+      "Float": 135.0
+     }
+    },
+    "shadow_blur": {
+     "value": {
+      "Float": 20.0
+     }
+    },
+    "shadow_color": {
+     "value": {
+      "Color": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ]
+     }
+    },
+    "shadow_distance": {
+     "value": {
+      "Float": 6.0
+     }
+    },
+    "shadow_opacity": {
+     "value": {
+      "Float": 70.0
+     }
+    },
+    "shadow_size": {
+     "value": {
+      "Float": 0.0
+     }
+    },
+    "size": {
+     "value": {
+      "Float": 130.0
+     }
+    },
+    "strikethrough": {
+     "value": {
+      "Bool": false
+     }
+    },
+    "stroke": {
+     "value": {
+      "Bool": true
+     }
+    },
+    "stroke2": {
+     "value": {
+      "Bool": false
+     }
+    },
+    "stroke2_color": {
+     "value": {
+      "Color": [
+       1.0,
+       0.85,
+       0.2,
+       1.0
+      ]
+     }
+    },
+    "stroke2_type": {
+     "value": {
+      "Choice": 0
+     }
+    },
+    "stroke2_width": {
+     "value": {
+      "Float": 10.0
+     }
+    },
+    "stroke_color": {
+     "value": {
+      "Color": [
+       0.0,
+       0.0,
+       0.0,
+       1.0
+      ]
+     }
+    },
+    "stroke_type": {
+     "value": {
+      "Choice": 0
+     }
+    },
+    "stroke_width": {
+     "value": {
+      "Float": 3.0
+     }
+    },
+    "text": {
+     "value": {
+      "Text": "如何鼓勵隊友"
+     }
+    },
+    "tracking": {
+     "value": {
+      "Float": 60.0
+     }
+    },
+    "underline": {
+     "value": {
+      "Bool": false
+     }
+    },
+    "uniform_scale": {
+     "value": {
+      "Bool": true
+     }
+    },
+    "vertical": {
+     "value": {
+      "Bool": false
+     }
+    }
+   },
+   "layer": {
+    "uid": 1
+   }
+  }
+ ]
+}

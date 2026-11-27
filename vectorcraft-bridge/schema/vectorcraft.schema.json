@@ -1,0 +1,544 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vectorcraft.local/vectorcraft.schema.json",
+  "title": "VectorCraft document (format version 4 JSON)",
+  "description": "The JSON object inside a .vectorcraft file. A save may gzip this JSON (magic 1f 8b, from version 3) or follow it with the VCBLOBS trailer (newline, NUL, VCBLOBS, NUL) that holds large images, profiles and the PDF. version 1 and 2 still open. format drawcraft is the name from before the rename. Node kind tags are serde rename_all lowercase of NodeKind. effectCatalog lists effect ids found in crates/effects; it does not reject other ids.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "format",
+    "version",
+    "document"
+  ],
+  "properties": {
+    "format": {
+      "enum": [
+        "vectorcraft",
+        "drawcraft"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4
+    },
+    "generator": {
+      "type": "string"
+    },
+    "preview": {
+      "$ref": "#/$defs/blob"
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/blob"
+      }
+    },
+    "pdf": {
+      "$ref": "#/$defs/blob"
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/blob"
+      }
+    },
+    "document": {
+      "$ref": "#/$defs/document"
+    }
+  },
+  "$defs": {
+    "blob": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "mime"
+      ],
+      "properties": {
+        "mime": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string",
+          "description": "base64; omitted when blob is set"
+        },
+        "blob": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "[offset, length] into the VCBLOBS trailer (version 4, at least 8 KiB)"
+        },
+        "proxy": {
+          "type": "boolean"
+        }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "x0",
+        "y0",
+        "x1",
+        "y1"
+      ],
+      "properties": {
+        "x0": {
+          "type": "number"
+        },
+        "y0": {
+          "type": "number"
+        },
+        "x1": {
+          "type": "number"
+        },
+        "y1": {
+          "type": "number"
+        }
+      }
+    },
+    "artboard": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "name",
+        "rect"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/rect"
+        },
+        "locked": {
+          "type": "boolean",
+          "default": false
+        },
+        "show_center_mark": {
+          "type": "boolean",
+          "default": false
+        },
+        "show_cross_hairs": {
+          "type": "boolean",
+          "default": false
+        },
+        "show_video_safe_areas": {
+          "type": "boolean",
+          "default": false
+        },
+        "video_ruler_pixel_aspect_ratio": {
+          "type": "number",
+          "default": 1
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "visible": {
+          "type": "boolean",
+          "default": true
+        },
+        "locked": {
+          "type": "boolean",
+          "default": false
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1
+        },
+        "blend": {},
+        "isolate": {
+          "type": "boolean",
+          "default": false
+        },
+        "knockout": {},
+        "knockout_shape": {
+          "type": "boolean",
+          "default": false
+        },
+        "appearance": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "kind": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "layer",
+                "group",
+                "path",
+                "compound",
+                "text",
+                "image",
+                "symbolinstance",
+                "blend",
+                "envelope",
+                "mesh",
+                "repeat",
+                "placeddocument",
+                "intertwine"
+              ]
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/node"
+              }
+            },
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/node"
+              }
+            }
+          }
+        },
+        "bbox_angle": {
+          "type": "number",
+          "default": 0
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "version",
+        "artboards",
+        "layers"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string",
+          "default": ""
+        },
+        "template": {
+          "type": "boolean",
+          "default": false
+        },
+        "units": {
+          "type": "string",
+          "default": "Points",
+          "description": "Points, Picas, Inches, Millimeters, Centimeters, Pixels, Feet & Inches, Meters, Yards, Feet"
+        },
+        "ruler_origin": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "rulers": {
+          "type": "string",
+          "description": "global or artboard; files from before the choice open as global"
+        },
+        "artboard_ruler_origins": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "color_mode": {
+          "type": "string",
+          "enum": [
+            "Rgb",
+            "Cmyk"
+          ],
+          "default": "Rgb"
+        },
+        "artboards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artboard"
+          }
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "swatches": {
+          "type": "array"
+        },
+        "swatch_groups": {
+          "type": "array"
+        },
+        "graphic_styles": {
+          "type": "array"
+        },
+        "char_styles": {
+          "type": "array"
+        },
+        "para_styles": {
+          "type": "array"
+        },
+        "text_threads": {
+          "type": "array"
+        },
+        "symbols": {
+          "type": "array"
+        },
+        "graph_designs": {
+          "type": "array"
+        },
+        "guides": {
+          "type": "array"
+        },
+        "views": {
+          "type": "array"
+        },
+        "saved_selections": {
+          "type": "array"
+        },
+        "variables": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "grid": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "raster_effects_ppi": {
+          "type": "number",
+          "default": 72
+        },
+        "images": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "patterns": {
+          "type": "array"
+        },
+        "next_id": {
+          "type": "integer"
+        },
+        "page_isolate": {
+          "type": "boolean",
+          "default": false
+        },
+        "page_knockout": {
+          "type": "boolean",
+          "default": false
+        },
+        "spot_use_lab": {
+          "type": "boolean",
+          "default": true
+        },
+        "setup": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "paste_remembers_layers": {
+          "type": "boolean",
+          "default": false
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "raster_effects": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "last_view": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
+        "transparency_grid": {
+          "type": "boolean",
+          "default": false
+        },
+        "layers_open": {
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "color_profiles": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "export_settings": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "slices": {
+          "type": "array"
+        },
+        "slices_clip_to_artboard": {
+          "type": "boolean",
+          "default": true
+        },
+        "print_setup": {},
+        "assets": {
+          "type": "array"
+        },
+        "svg_scripts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "nodeKind": {
+      "enum": [
+        "layer",
+        "group",
+        "path",
+        "compound",
+        "text",
+        "image",
+        "symbolinstance",
+        "blend",
+        "envelope",
+        "mesh",
+        "repeat",
+        "placeddocument",
+        "intertwine"
+      ]
+    },
+    "effectCatalog": {
+      "description": "Effect ids named in crates/effects. Informational: a document may use others, including plugin.<id>.",
+      "type": "array",
+      "const": [
+        "adjust.brightnessContrast",
+        "adjust.curves",
+        "adjust.hueSaturation",
+        "adjust.levels",
+        "adjust.shiftToColor",
+        "adjust.temperatureTint",
+        "artistic.coloredPencil",
+        "artistic.cutout",
+        "artistic.dryBrush",
+        "artistic.filmGrain",
+        "artistic.fresco",
+        "artistic.neonGlow",
+        "artistic.paintDaubs",
+        "artistic.paletteKnife",
+        "artistic.plasticWrap",
+        "artistic.posterEdges",
+        "artistic.roughPastels",
+        "artistic.smudgeStick",
+        "artistic.sponge",
+        "artistic.underpainting",
+        "artistic.watercolor",
+        "blur.gaussian",
+        "blur.radial",
+        "blur.smart",
+        "bogus.effect",
+        "distort.diffuseGlow",
+        "distort.freeDistort",
+        "distort.glass",
+        "distort.oceanRipple",
+        "distort.puckerBloat",
+        "distort.roughen",
+        "distort.transform",
+        "distort.tweak",
+        "distort.twist",
+        "distort.zigZag",
+        "no.such",
+        "path.offsetPath",
+        "path.outlineObject",
+        "path.outlineStroke",
+        "pathfinder.add",
+        "pathfinder.crop",
+        "pathfinder.divide",
+        "pathfinder.exclude",
+        "pathfinder.hardMix",
+        "pathfinder.intersect",
+        "pathfinder.merge",
+        "pathfinder.minusBack",
+        "pathfinder.outline",
+        "pathfinder.softMix",
+        "pathfinder.subtract",
+        "pathfinder.trap",
+        "pathfinder.trim",
+        "pixelate.colorHalftone",
+        "pixelate.crystallize",
+        "pixelate.mezzotint",
+        "pixelate.pointillize",
+        "sharpen.unsharpMask",
+        "sketch.basRelief",
+        "sketch.chalkCharcoal",
+        "sketch.charcoal",
+        "sketch.chrome",
+        "sketch.conteCrayon",
+        "sketch.graphicPen",
+        "sketch.halftonePattern",
+        "sketch.notePaper",
+        "sketch.photocopy",
+        "sketch.plaster",
+        "sketch.reticulation",
+        "sketch.stamp",
+        "sketch.tornEdges",
+        "sketch.waterPaper",
+        "stylize.dropShadow",
+        "stylize.feather",
+        "stylize.glowingEdges",
+        "stylize.innerGlow",
+        "stylize.outerGlow",
+        "stylize.roundCorners",
+        "stylize.scribble",
+        "texture.craquelure",
+        "texture.grain",
+        "texture.mosaicTiles",
+        "texture.patchwork",
+        "texture.stainedGlass",
+        "texture.texturizer",
+        "video.deinterlace",
+        "video.ntscColors",
+        "warp.arc",
+        "warp.arcLower",
+        "warp.arcUpper",
+        "warp.arch",
+        "warp.bulge",
+        "warp.fish",
+        "warp.fisheye",
+        "warp.flag",
+        "warp.inflate",
+        "warp.rise",
+        "warp.shellLower",
+        "warp.shellUpper",
+        "warp.squeeze",
+        "warp.twist",
+        "warp.wave"
+      ]
+    }
+  }
+}

@@ -1,0 +1,672 @@
+#!/usr/bin/env python3
+"""vc — drive VectorCraft from the command line.
+
+The running app (vectorcraft --control, default 127.0.0.1:7979) is the editor.
+Every change is an engine or UI command, so the open document updates without a
+reload. The .vectorcraft file is written only when that port is closed, or when
+--offline is set. See API.md.
+"""
+import argparse
+import gzip
+import json
+import os
+import socket
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+BLOB = b"\n\0VCBLOBS\0"
+SCHEMA = os.path.join(HERE, "schema", "vectorcraft.schema.json")
+
+
+class Offline(Exception):
+    pass
+
+
+class ControlError(Exception):
+    pass
+
+
+def emit(result):
+    print(json.dumps({"ok": True, "result": result}, ensure_ascii=False))
+
+
+def fail(message):
+    print(json.dumps({"ok": False, "error": str(message)}, ensure_ascii=False))
+    raise SystemExit(1)
+
+
+def warn_offline():
+    print("control port closed; edited the .vectorcraft file directly. Open it in VectorCraft to see it.", file=sys.stderr)
+
+
+def port_open(host, port):
+    try:
+        sock = socket.create_connection((host, port), 0.4)
+    except OSError:
+        return False
+    sock.close()
+    return True
+
+
+class Client:
+    def __init__(self, host, port, timeout=60):
+        self.host, self.port, self.timeout = host, port, timeout
+
+    def call(self, method, params=None):
+        body = {"id": 1, "method": method, "params": params or {}}
+        try:
+            sock = socket.create_connection((self.host, self.port), self.timeout)
+        except ConnectionRefusedError:
+            raise Offline()
+        except OSError as exc:
+            if getattr(exc, "winerror", None) in (10061, 10060) or exc.errno in (111, 61):
+                raise Offline()
+            raise
+        try:
+            sock.settimeout(self.timeout)
+            fh = sock.makefile("rwb")
+            fh.write((json.dumps(body, ensure_ascii=False) + "\n").encode("utf-8"))
+            fh.flush()
+            line = fh.readline()
+        finally:
+            sock.close()
+        if not line:
+            raise ControlError("control port closed the connection without a reply")
+        try:
+            reply = json.loads(line.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ControlError("control port returned non-JSON: %s" % exc)
+        if not reply.get("ok"):
+            raise ControlError(reply.get("error") or "command failed")
+        return reply.get("result")
+
+    def execute(self, command, params=None):
+        return self.call("engine.execute", {"command": command, "params": params or {}})
+
+
+def parse_value(text):
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
+def nest_key(obj, key, value):
+    parts = key.split(".")
+    cur = obj
+    for part in parts[:-1]:
+        cur = cur.setdefault(part, {})
+    cur[parts[-1]] = value
+
+
+def read_project(path):
+    raw = open(path, "rb").read()
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    cut = raw.find(BLOB)
+    if cut >= 0:
+        raw = raw[:cut]
+    return json.loads(raw.decode("utf-8"))
+
+
+def save_project(path, doc):
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, path)
+
+
+def blank(name, width, height, units):
+    return {
+        "format": "vectorcraft",
+        "version": 4,
+        "generator": "vectorcraft-bridge",
+        "document": {
+            "version": 1,
+            "title": name,
+            "units": units,
+            "rulers": "artboard",
+            "color_mode": "Rgb",
+            "artboards": [{
+                "id": 1, "name": "Artboard 1",
+                "rect": {"x0": 0.0, "y0": 0.0, "x1": width, "y1": height},
+                "show_center_mark": False, "show_cross_hairs": False,
+            }],
+            "layers": [{
+                "id": 1, "name": "Layer 1",
+                "visible": True, "locked": False, "opacity": 1.0,
+                "kind": {
+                    "type": "layer",
+                    "color": {"Preset": 0},
+                    "template": False,
+                    "printable": True,
+                    "preview": True,
+                    "children": [],
+                },
+            }],
+            "raster_effects_ppi": 72,
+            "next_id": 2,
+        },
+    }
+
+
+def layer_children(doc):
+    return doc["document"]["layers"][0]["kind"]["children"]
+
+
+def alloc(doc):
+    document = doc["document"]
+    nid = int(document.get("next_id") or 2)
+    document["next_id"] = nid + 1
+    return nid
+
+
+def solid(hex_color):
+    text = hex_color.lstrip("#")
+    if len(text) != 6:
+        fail("color must be #rrggbb")
+    r, g, b = (int(text[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return {"type": "solid", "color": {"model": "rgb", "r": r, "g": g, "b": b}}
+
+
+def appearance(fill, stroke, weight):
+    return {"items": [
+        {"kind": "fill", "paint": solid(fill) if fill else {"type": "none"}},
+        {"kind": "stroke", "paint": solid(stroke) if stroke else {"type": "none"}, "width": weight or 0},
+    ]}
+
+
+def rect_path(x, y, w, h):
+    return {"subpaths": [{"closed": True, "anchors": [{"p": [x, y]}, {"p": [x + w, y]}, {"p": [x + w, y + h]}, {"p": [x, y + h]}]}]}
+
+
+def add_node(doc, kind, name, fill, stroke, weight):
+    node = {
+        "id": alloc(doc),
+        "name": name,
+        "appearance": appearance(fill, stroke, weight),
+        "kind": kind,
+    }
+    layer_children(doc).append(node)
+    return node["id"]
+
+
+def find_node(doc, nid):
+    def walk(nodes):
+        for node in nodes:
+            if node.get("id") == nid:
+                return node
+            kind = node.get("kind") or {}
+            found = walk(kind.get("children") or [])
+            if found:
+                return found
+        return None
+    return walk(doc["document"]["layers"])
+
+
+def load_or_fail(args):
+    if not args.project:
+        fail("offline edit needs -p PROJECT")
+    return read_project(args.project)
+
+
+def cmd_new(args, client):
+    params = {"name": args.name, "width": args.width, "height": args.height, "units": args.units}
+    if client:
+        created = client.execute("file.new", params)
+        saved = None
+        if args.project:
+            saved = client.call("app.save", {"path": os.path.abspath(args.project), "wait": True})
+        emit({"via": "control", "project": created, "saved": saved})
+        return
+    if not args.project:
+        fail("offline new needs -p PROJECT")
+    warn_offline()
+    doc = blank(args.name, args.width, args.height, args.units)
+    save_project(args.project, doc)
+    emit({"via": "file", "path": args.project})
+
+
+def cmd_open(args, client):
+    if not client:
+        fail("open needs VectorCraft listening on the control port")
+    emit({"via": "control", "open": client.call("app.open", {"path": args.path})})
+
+
+def cmd_save(args, client):
+    if not client:
+        if args.project and os.path.isfile(args.project):
+            emit({"via": "file", "path": os.path.abspath(args.project)})
+            return
+        fail("save needs VectorCraft listening on the control port")
+    params = {"wait": True}
+    if args.path:
+        params["path"] = os.path.abspath(args.path)
+    emit({"via": "control", "save": client.call("app.save", params)})
+
+
+def shape_live(client, command, params):
+    emit({"via": "control", "shape": client.execute(command, params)})
+
+
+def cmd_rect(args, client):
+    if client:
+        shape_live(client, "shape.rectangle", {"x": args.x, "y": args.y, "width": args.width, "height": args.height})
+        return
+    doc = load_or_fail(args)
+    warn_offline()
+    nid = add_node(doc, {"type": "path", "path": rect_path(args.x, args.y, args.width, args.height)}, args.name or "Rectangle", args.fill, args.stroke, args.weight)
+    save_project(args.project, doc)
+    emit({"via": "file", "id": nid})
+
+
+def cmd_ellipse(args, client):
+    if client:
+        shape_live(client, "shape.ellipse", {"x": args.x, "y": args.y, "width": args.width, "height": args.height})
+        return
+    doc = load_or_fail(args)
+    warn_offline()
+    # Four cubic-ish corners are not required for the file to be a path. A diamond of the box keeps the schema small.
+    x, y, w, h = args.x, args.y, args.width, args.height
+    path = {"subpaths": [{"closed": True, "anchors": [
+        {"p": [x + w / 2, y]}, {"p": [x + w, y + h / 2]}, {"p": [x + w / 2, y + h]}, {"p": [x, y + h / 2]},
+    ]}]}
+    nid = add_node(doc, {"type": "path", "path": path}, args.name or "Ellipse", args.fill, args.stroke, args.weight)
+    save_project(args.project, doc)
+    emit({"via": "file", "id": nid})
+
+
+def cmd_text(args, client):
+    params = {"x": args.x, "y": args.y, "text": args.text, "size": args.size}
+    if args.font:
+        params["font"] = args.font
+    if client:
+        emit({"via": "control", "text": client.execute("text.create", params)})
+        return
+    doc = load_or_fail(args)
+    warn_offline()
+    kind = {
+        "type": "text",
+        "kind": {"kind": "point"},
+        "xf": [1, 0, 0, 1, args.x, args.y],
+        "runs": [{
+            "text": args.text,
+            "style": {
+                "font_family": args.font or "Inter",
+                "font_style": "Regular",
+                "size": args.size,
+                "fill": solid(args.fill) if args.fill else {"type": "none"},
+                "stroke": {"type": "none"},
+            },
+        }],
+    }
+    nid = add_node(doc, kind, args.name or "Type", None, None, 0)
+    save_project(args.project, doc)
+    emit({"via": "file", "id": nid})
+
+
+def cmd_fill(args, client):
+    params = {"ids": [args.id]}
+    if args.none:
+        params["none"] = True
+    else:
+        params["color"] = args.color
+    if client:
+        emit({"via": "control", "fill": client.execute("paint.setFill", params)})
+        return
+    doc = load_or_fail(args)
+    node = find_node(doc, args.id) or fail("no object %s" % args.id)
+    paint = {"type": "none"} if args.none else solid(args.color)
+    items = node.setdefault("appearance", {}).setdefault("items", [])
+    for item in items:
+        if item.get("kind") == "fill":
+            item["paint"] = paint
+            break
+    else:
+        items.insert(0, {"kind": "fill", "paint": paint})
+    warn_offline()
+    save_project(args.project, doc)
+    emit({"via": "file", "id": args.id})
+
+
+def cmd_stroke(args, client):
+    if client:
+        if args.color or args.none:
+            paint = {"ids": [args.id], "none": True} if args.none else {"ids": [args.id], "color": args.color}
+            client.execute("paint.setStroke", paint)
+        if args.weight is not None:
+            client.execute("stroke.set", {"ids": [args.id], "weight": args.weight})
+        emit({"via": "control", "id": args.id})
+        return
+    doc = load_or_fail(args)
+    node = find_node(doc, args.id) or fail("no object %s" % args.id)
+    items = node.setdefault("appearance", {}).setdefault("items", [])
+    stroke = next((item for item in items if item.get("kind") == "stroke"), None)
+    if stroke is None:
+        stroke = {"kind": "stroke", "paint": {"type": "none"}, "width": 0}
+        items.append(stroke)
+    if args.none:
+        stroke["paint"] = {"type": "none"}
+    elif args.color:
+        stroke["paint"] = solid(args.color)
+    if args.weight is not None:
+        stroke["width"] = args.weight
+    warn_offline()
+    save_project(args.project, doc)
+    emit({"via": "file", "id": args.id})
+
+
+def shift_path(node, dx, dy):
+    kind = node.get("kind") or {}
+    if kind.get("type") == "text":
+        xf = kind.get("xf")
+        if isinstance(xf, list) and len(xf) == 6:
+            xf[4] += dx
+            xf[5] += dy
+        return
+    path = (kind.get("path") or {})
+    for sub in path.get("subpaths") or []:
+        for anchor in sub.get("anchors") or []:
+            point = anchor.get("p")
+            if isinstance(point, list) and len(point) == 2:
+                point[0] += dx
+                point[1] += dy
+
+
+def cmd_move(args, client):
+    if client:
+        emit({"via": "control", "move": client.execute("object.move", {"ids": [args.id], "dx": args.dx, "dy": args.dy})})
+        return
+    doc = load_or_fail(args)
+    node = find_node(doc, args.id) or fail("no object %s" % args.id)
+    shift_path(node, args.dx, args.dy)
+    warn_offline()
+    save_project(args.project, doc)
+    emit({"via": "file", "id": args.id})
+
+
+def cmd_delete(args, client):
+    if client:
+        emit({"via": "control", "delete": client.execute("edit.clear", {"ids": args.ids})})
+        return
+    doc = load_or_fail(args)
+    want = set(args.ids)
+
+    def keep(nodes):
+        out = []
+        for node in nodes:
+            if node.get("id") in want:
+                continue
+            kind = node.get("kind") or {}
+            if kind.get("children"):
+                kind["children"] = keep(kind["children"])
+            out.append(node)
+        return out
+
+    doc["document"]["layers"] = keep(doc["document"]["layers"])
+    warn_offline()
+    save_project(args.project, doc)
+    emit({"via": "file", "ids": args.ids})
+
+
+def cmd_effect(args, client):
+    params = {"ids": [args.id], "effect": args.effect}
+    if args.params:
+        try:
+            params["params"] = json.loads(args.params)
+        except json.JSONDecodeError as exc:
+            fail("--params is not valid JSON (%s): %s" % (exc, args.params))
+    if client:
+        emit({"via": "control", "effect": client.execute("effect.apply", params)})
+        return
+    doc = load_or_fail(args)
+    node = find_node(doc, args.id) or fail("no object %s" % args.id)
+    effects = node.setdefault("appearance", {}).setdefault("effects", [])
+    effects.append({"id": args.effect, "params": params.get("params", {}), "visible": True})
+    warn_offline()
+    save_project(args.project, doc)
+    emit({"via": "file", "id": args.id, "effect": args.effect})
+
+
+def cmd_export(args, client):
+    if not client:
+        fail("export needs VectorCraft listening on the control port")
+    params = {"path": args.path, "format": args.format, "wait": True}
+    if args.artboard is not None:
+        params["artboard"] = args.artboard
+    if args.scale is not None:
+        params["scale"] = args.scale
+    emit({"via": "control", "export": client.call("app.export", params)})
+
+
+def cmd_render(args, client):
+    if not client:
+        fail("render needs VectorCraft listening on the control port")
+    params = {"path": args.path}
+    if args.artboard is not None:
+        params["artboard"] = args.artboard
+    if args.scale is not None:
+        params["scale"] = args.scale
+    emit({"via": "control", "render": client.call("ui.render", params)})
+
+
+def cmd_show(args, client):
+    if client:
+        emit({"via": "control", "document": client.execute("document.inspect", {})})
+        return
+    doc = load_or_fail(args)
+    document = doc["document"]
+    emit({"via": "file", "title": document.get("title"), "artboards": document.get("artboards"), "layers": document.get("layers")})
+
+
+def cmd_links(args, client):
+    if client:
+        emit({"via": "control", "links": client.execute("links.check", {})})
+        return
+    doc = load_or_fail(args)
+    missing = []
+
+    def walk(nodes):
+        for node in nodes:
+            kind = node.get("kind") or {}
+            link = kind.get("link") or {}
+            path = link.get("path") if isinstance(link, dict) else None
+            if path and not os.path.exists(path):
+                missing.append({"id": node.get("id"), "name": node.get("name"), "path": path})
+            walk(kind.get("children") or [])
+    walk(doc["document"]["layers"])
+    emit({"via": "file", "missing": missing})
+
+
+def cmd_status(args, client):
+    if not client:
+        fail("status needs VectorCraft listening on the control port")
+    emit({
+        "via": "control",
+        "document": client.execute("document.inspect", {}),
+        "links": client.execute("links.check", {}),
+        "ui": client.call("ui.inspect", {}),
+    })
+
+
+def cmd_exec(args, client):
+    if not client:
+        fail("exec needs VectorCraft listening on the control port")
+    pairs = list(args.pairs)
+    params = {}
+    if args.json:
+        try:
+            params = json.loads(args.json)
+        except json.JSONDecodeError as exc:
+            if "=" in args.json and not args.json.lstrip().startswith("{"):
+                pairs.insert(0, args.json)
+            else:
+                fail("params is not valid JSON (%s): %s" % (exc, args.json))
+        if not isinstance(params, dict):
+            fail("params must be a JSON object: %s" % args.json)
+    for pair in pairs:
+        key, _, val = pair.partition("=")
+        nest_key(params, key, parse_value(val))
+    emit({"via": "control", "command": args.command, "result": client.execute(args.command, params)})
+
+
+def cmd_commands(args, client):
+    if not client:
+        fail("commands needs VectorCraft listening on the control port")
+    listed = client.call("engine.commands")
+    if args.filter:
+        needle = args.filter.lower()
+        listed = [row for row in listed if needle in json.dumps(row, ensure_ascii=False).lower()]
+    emit({"via": "control", "commands": listed})
+
+
+def cmd_batch(args, client):
+    if not client:
+        fail("batch needs VectorCraft listening on the control port")
+    steps = json.load(open(args.file, encoding="utf-8"))
+    try:
+        result = client.call("engine.batch", {"steps": steps, "stopOnError": not args.keep_going})
+        emit({"via": "control", "batch": result})
+        return
+    except ControlError as exc:
+        if "unknown method" not in str(exc):
+            fail(exc)
+    results = []
+    failed = 0
+    for step in steps:
+        command = step.get("command") or step.get("id")
+        try:
+            results.append({"ok": True, "command": command, "result": client.execute(command, step.get("params") or {})})
+        except ControlError as exc:
+            failed += 1
+            results.append({"ok": False, "command": command, "error": str(exc)})
+            if not args.keep_going:
+                break
+    emit({"via": "control", "batch": {"completed": len(results) - failed, "failed": failed, "results": results, "fallback": "engine.execute"}})
+
+
+def cmd_validate(args, _client):
+    from jsonschema import Draft202012Validator
+    schema = json.load(open(SCHEMA, encoding="utf-8"))
+    doc = read_project(args.project)
+    errors = sorted(Draft202012Validator(schema).iter_errors(doc), key=lambda err: list(err.path))
+    if errors:
+        fail("; ".join("/".join(map(str, err.path)) + ": " + err.message.splitlines()[0] for err in errors[:12]))
+    emit({"via": "file", "valid": True, "schema": SCHEMA})
+
+
+def add_common(parser, with_defaults):
+    def d(value):
+        return value if with_defaults else argparse.SUPPRESS
+    parser.add_argument("-p", "--project", default=d(os.environ.get("VC_PROJECT")))
+    parser.add_argument("--port", type=int, default=d(int(os.environ.get("VC_PORT") or os.environ.get("VECTORCRAFT_CONTROL_PORT") or 7979)))
+    parser.add_argument("--host", default=d("127.0.0.1"))
+    parser.add_argument("--offline", action="store_true", default=d(False))
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="vc", description=__doc__)
+    add_common(parser, True)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    def add(name, fn, help_text=None):
+        item = sub.add_parser(name, help=help_text)
+        add_common(item, False)
+        item.set_defaults(fn=fn)
+        return item
+
+    item = add("new", cmd_new, "create a document")
+    item.add_argument("name")
+    item.add_argument("--width", type=float, default=612)
+    item.add_argument("--height", type=float, default=792)
+    item.add_argument("--units", default="Points")
+    item = add("open", cmd_open)
+    item.add_argument("path")
+    item = add("save", cmd_save)
+    item.add_argument("path", nargs="?")
+    for name, fn in (("rect", cmd_rect), ("ellipse", cmd_ellipse)):
+        item = add(name, fn)
+        item.add_argument("--x", type=float, required=True)
+        item.add_argument("--y", type=float, required=True)
+        item.add_argument("--width", type=float, required=True)
+        item.add_argument("--height", type=float, required=True)
+        item.add_argument("--name")
+        item.add_argument("--fill", default="#000000")
+        item.add_argument("--stroke")
+        item.add_argument("--weight", type=float, default=0)
+    item = add("text", cmd_text)
+    item.add_argument("text")
+    item.add_argument("--x", type=float, required=True)
+    item.add_argument("--y", type=float, required=True)
+    item.add_argument("--size", type=float, default=24)
+    item.add_argument("--font")
+    item.add_argument("--fill", default="#000000")
+    item.add_argument("--name")
+    item = add("fill", cmd_fill)
+    item.add_argument("id", type=int)
+    item.add_argument("--color", default="#ff0000")
+    item.add_argument("--none", action="store_true")
+    item = add("stroke", cmd_stroke)
+    item.add_argument("id", type=int)
+    item.add_argument("--color")
+    item.add_argument("--weight", type=float)
+    item.add_argument("--none", action="store_true")
+    item = add("move", cmd_move)
+    item.add_argument("id", type=int)
+    item.add_argument("--dx", type=float, required=True)
+    item.add_argument("--dy", type=float, required=True)
+    item = add("delete", cmd_delete)
+    item.add_argument("ids", type=int, nargs="+")
+    item = add("effect", cmd_effect)
+    item.add_argument("id", type=int)
+    item.add_argument("effect")
+    item.add_argument("--params")
+    item = add("export", cmd_export, "write a file through app.export")
+    item.add_argument("path")
+    item.add_argument("--format", default="png")
+    item.add_argument("--artboard", type=int)
+    item.add_argument("--scale", type=float)
+    item = add("render", cmd_render, "PNG of one artboard through ui.render")
+    item.add_argument("path")
+    item.add_argument("--artboard", type=int)
+    item.add_argument("--scale", type=float)
+    item = add("show", cmd_show, "layer tree")
+    add("links", cmd_links, "whether linked files are found")
+    add("status", cmd_status, "document, links, and background export jobs")
+    item = add("exec", cmd_exec, "run any engine or UI command")
+    item.add_argument("command")
+    item.add_argument("json", nargs="?")
+    item.add_argument("pairs", nargs="*")
+    item = add("commands", cmd_commands)
+    item.add_argument("--filter")
+    item = add("batch", cmd_batch)
+    item.add_argument("file")
+    item.add_argument("--keep-going", action="store_true")
+    item = add("validate", cmd_validate)
+    return parser
+
+
+def main(argv=None):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    args = build_parser().parse_args(argv)
+    client = None
+    if not args.offline and port_open(args.host, args.port):
+        client = Client(args.host, args.port)
+    try:
+        args.fn(args, client)
+    except Offline:
+        fail("the control port closed while the command was running")
+    except ControlError as exc:
+        fail(exc)
+    except BrokenPipeError:
+        fail("the control port closed the connection")
+
+
+if __name__ == "__main__":
+    main()

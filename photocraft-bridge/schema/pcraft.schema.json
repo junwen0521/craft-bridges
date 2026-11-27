@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://photocraft.dev/schema/pcraft-manifest.json",
+  "title": "PhotoCraft manifest.json",
+  "description": "The JSON manifest inside a .pcraft directory or zip. Pixels live in tiles/<blake3>.zst, not in this file. format_version 1.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "format_version",
+    "generator",
+    "document"
+  ],
+  "properties": {
+    "format_version": {
+      "const": 1
+    },
+    "generator": {
+      "type": "string"
+    },
+    "thumbnail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "composite": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "document": {
+      "$ref": "#/$defs/document"
+    }
+  },
+  "$defs": {
+    "layer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "name",
+        "visible",
+        "locks",
+        "blend",
+        "opacity",
+        "fill_opacity",
+        "clipped",
+        "mask",
+        "effects",
+        "label",
+        "content",
+        "psd_blocks",
+        "psd_id",
+        "fill_cache"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "locks": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "blend": {
+          "enum": [
+            "PassThrough",
+            "Normal",
+            "Dissolve",
+            "Darken",
+            "Multiply",
+            "ColorBurn",
+            "LinearBurn",
+            "DarkerColor",
+            "Lighten",
+            "Screen",
+            "ColorDodge",
+            "LinearDodge",
+            "LighterColor",
+            "Overlay",
+            "SoftLight",
+            "HardLight",
+            "VividLight",
+            "LinearLight",
+            "PinLight",
+            "HardMix",
+            "Difference",
+            "Exclusion",
+            "Subtract",
+            "Divide",
+            "Hue",
+            "Saturation",
+            "Color",
+            "Luminosity",
+            "Reflect",
+            "Glow",
+            "Negation",
+            "Xor",
+            "PaintNetColorBurn",
+            "PaintNetColorDodge"
+          ]
+        },
+        "opacity": {
+          "type": "number"
+        },
+        "fill_opacity": {
+          "type": "number"
+        },
+        "clipped": {
+          "type": "boolean"
+        },
+        "mask": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
+        "effects": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "label": {
+          "enum": [
+            "None",
+            "Red",
+            "Orange",
+            "Yellow",
+            "Green",
+            "Blue",
+            "Violet",
+            "Gray",
+            "Seafoam",
+            "Indigo",
+            "Magenta",
+            "Fuchsia"
+          ]
+        },
+        "content": {
+          "$ref": "#/$defs/content"
+        },
+        "psd_blocks": {
+          "type": "array"
+        },
+        "psd_id": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "fill_cache": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "raster",
+            "group",
+            "adjustment",
+            "fill",
+            "text",
+            "shape",
+            "smart"
+          ]
+        },
+        "surface": {
+          "$ref": "#/$defs/surface"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/layer"
+          }
+        },
+        "text": {
+          "type": "string"
+        },
+        "font_family": {
+          "type": "string"
+        },
+        "size_pt": {
+          "type": "number"
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "format",
+        "default",
+        "tiles"
+      ],
+      "properties": {
+        "format": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "mode",
+            "sample",
+            "alpha"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "Bitmap",
+                "Grayscale",
+                "Indexed",
+                "Rgb",
+                "Cmyk",
+                "Lab",
+                "Multichannel",
+                "Duotone"
+              ]
+            },
+            "sample": {
+              "enum": [
+                "U8",
+                "U16",
+                "F32"
+              ]
+            },
+            "alpha": {
+              "type": "boolean"
+            }
+          }
+        },
+        "default": {
+          "type": "string"
+        },
+        "tiles": {
+          "type": "array"
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "name",
+        "size",
+        "resolution_dpi",
+        "mode",
+        "depth",
+        "icc_profile",
+        "layers",
+        "channels",
+        "guides",
+        "metadata",
+        "global_light"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "width",
+            "height"
+          ],
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "resolution_dpi": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "mode": {
+          "enum": [
+            "Bitmap",
+            "Grayscale",
+            "Indexed",
+            "Rgb",
+            "Cmyk",
+            "Lab",
+            "Multichannel",
+            "Duotone"
+          ]
+        },
+        "depth": {
+          "enum": [
+            "U8",
+            "U16",
+            "F32"
+          ]
+        },
+        "icc_profile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/layer"
+          }
+        },
+        "channels": {
+          "type": "array"
+        },
+        "guides": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "global_light": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

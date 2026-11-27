@@ -1,0 +1,4399 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://filmcraft.local/schema/fcproj-v15.json",
+ "title": "FilmCraft project (.fcproj)",
+ "description": "UTF-8 JSON written by filmcraft-format, schema_version 15 (FilmCraft 0.15). Media is referenced by path, never embedded. Files are compact. Ticks: 254016000000 per second. A null coordinate of a point parameter is NaN (auto). This schema lists every field the 0.15 model reads; fields with serde default may be omitted. Unknown future fields are allowed on the envelope and project so a newer optional key does not fail a reader that only checks this file.",
+ "type": "object",
+ "required": [
+  "format",
+  "schema_version",
+  "project"
+ ],
+ "properties": {
+  "format": {
+   "const": "filmcraft.project"
+  },
+  "schema_version": {
+   "type": "integer",
+   "minimum": 1,
+   "maximum": 15,
+   "description": "This build writes 15 and reads 1..15. Newer files are refused."
+  },
+  "generator": {
+   "type": "string",
+   "examples": [
+    "FilmCraft 0.15.0"
+   ]
+  },
+  "project": {
+   "$ref": "#/$defs/project"
+  },
+  "view": {
+   "$ref": "#/$defs/projectView",
+   "description": "Optional. Not part of the edit, not an undo step. Omitted when nothing is open."
+  }
+ },
+ "additionalProperties": true,
+ "$defs": {
+  "tick": {
+   "type": "integer",
+   "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+  },
+  "vec2": {
+   "type": "object",
+   "required": [
+    "x",
+    "y"
+   ],
+   "properties": {
+    "x": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "description": "null is NaN, meaning auto (frame or source centre) on point parameters only"
+    },
+    "y": {
+     "type": [
+      "number",
+      "null"
+     ]
+    }
+   },
+   "additionalProperties": false
+  },
+  "frameRate": {
+   "type": "object",
+   "required": [
+    "num",
+    "den"
+   ],
+   "properties": {
+    "num": {
+     "type": "integer"
+    },
+    "den": {
+     "type": "integer"
+    }
+   },
+   "additionalProperties": false,
+   "description": "Exact frames per second, num/den. Defaults: 24000/1001."
+  },
+  "paramValue": {
+   "oneOf": [
+    {
+     "type": "object",
+     "required": [
+      "Float"
+     ],
+     "properties": {
+      "Float": {
+       "type": "number"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Vec2"
+     ],
+     "properties": {
+      "Vec2": {
+       "$ref": "#/$defs/vec2"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Color"
+     ],
+     "properties": {
+      "Color": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       },
+       "minItems": 4,
+       "maxItems": 4,
+       "description": "straight sRGB RGBA, 0..1"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Bool"
+     ],
+     "properties": {
+      "Bool": {
+       "type": "boolean"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Choice"
+     ],
+     "properties": {
+      "Choice": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Text"
+     ],
+     "properties": {
+      "Text": {
+       "type": "string"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Curve"
+     ],
+     "properties": {
+      "Curve": {
+       "type": "array",
+       "items": {
+        "type": "array",
+        "items": {
+         "type": "number"
+        },
+        "minItems": 2,
+        "maxItems": 2
+       }
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Path"
+     ],
+     "properties": {
+      "Path": {
+       "$ref": "#/$defs/maskPath"
+      }
+     },
+     "additionalProperties": false
+    }
+   ]
+  },
+  "param": {
+   "type": "object",
+   "required": [
+    "value"
+   ],
+   "properties": {
+    "value": {
+     "oneOf": [
+      {
+       "type": "object",
+       "required": [
+        "Float"
+       ],
+       "properties": {
+        "Float": {
+         "type": "number"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Vec2"
+       ],
+       "properties": {
+        "Vec2": {
+         "$ref": "#/$defs/vec2"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Color"
+       ],
+       "properties": {
+        "Color": {
+         "type": "array",
+         "items": {
+          "type": "number"
+         },
+         "minItems": 4,
+         "maxItems": 4,
+         "description": "straight sRGB RGBA, 0..1"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Bool"
+       ],
+       "properties": {
+        "Bool": {
+         "type": "boolean"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Choice"
+       ],
+       "properties": {
+        "Choice": {
+         "type": "integer",
+         "minimum": 0
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Text"
+       ],
+       "properties": {
+        "Text": {
+         "type": "string"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Curve"
+       ],
+       "properties": {
+        "Curve": {
+         "type": "array",
+         "items": {
+          "type": "array",
+          "items": {
+           "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+         }
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Path"
+       ],
+       "properties": {
+        "Path": {
+         "$ref": "#/$defs/maskPath"
+        }
+       },
+       "additionalProperties": false
+      }
+     ]
+    },
+    "keyframes": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "time",
+       "value",
+       "interp"
+      ],
+      "properties": {
+       "time": {
+        "type": "integer",
+        "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+       },
+       "value": {
+        "oneOf": [
+         {
+          "type": "object",
+          "required": [
+           "Float"
+          ],
+          "properties": {
+           "Float": {
+            "type": "number"
+           }
+          },
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "required": [
+           "Vec2"
+          ],
+          "properties": {
+           "Vec2": {
+            "$ref": "#/$defs/vec2"
+           }
+          },
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "required": [
+           "Color"
+          ],
+          "properties": {
+           "Color": {
+            "type": "array",
+            "items": {
+             "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "straight sRGB RGBA, 0..1"
+           }
+          },
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "required": [
+           "Bool"
+          ],
+          "properties": {
+           "Bool": {
+            "type": "boolean"
+           }
+          },
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "required": [
+           "Choice"
+          ],
+          "properties": {
+           "Choice": {
+            "type": "integer",
+            "minimum": 0
+           }
+          },
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "required": [
+           "Text"
+          ],
+          "properties": {
+           "Text": {
+            "type": "string"
+           }
+          },
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "required": [
+           "Curve"
+          ],
+          "properties": {
+           "Curve": {
+            "type": "array",
+            "items": {
+             "type": "array",
+             "items": {
+              "type": "number"
+             },
+             "minItems": 2,
+             "maxItems": 2
+            }
+           }
+          },
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "required": [
+           "Path"
+          ],
+          "properties": {
+           "Path": {
+            "$ref": "#/$defs/maskPath"
+           }
+          },
+          "additionalProperties": false
+         }
+        ]
+       },
+       "interp": {
+        "enum": [
+         "Linear",
+         "Hold",
+         "Bezier",
+         "AutoBezier",
+         "ContinuousBezier",
+         "EaseIn",
+         "EaseOut"
+        ],
+        "default": "Linear"
+       },
+       "out_influence": {
+        "type": "number",
+        "default": 0.3333333333333333
+       },
+       "in_influence": {
+        "type": "number",
+        "default": 0.3333333333333333
+       }
+      },
+      "additionalProperties": false
+     },
+     "description": "Clip-relative ticks. Empty or omitted = static. Default empty."
+    }
+   },
+   "additionalProperties": false
+  },
+  "keyframe": {
+   "type": "object",
+   "required": [
+    "time",
+    "value",
+    "interp"
+   ],
+   "properties": {
+    "time": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "value": {
+     "oneOf": [
+      {
+       "type": "object",
+       "required": [
+        "Float"
+       ],
+       "properties": {
+        "Float": {
+         "type": "number"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Vec2"
+       ],
+       "properties": {
+        "Vec2": {
+         "$ref": "#/$defs/vec2"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Color"
+       ],
+       "properties": {
+        "Color": {
+         "type": "array",
+         "items": {
+          "type": "number"
+         },
+         "minItems": 4,
+         "maxItems": 4,
+         "description": "straight sRGB RGBA, 0..1"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Bool"
+       ],
+       "properties": {
+        "Bool": {
+         "type": "boolean"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Choice"
+       ],
+       "properties": {
+        "Choice": {
+         "type": "integer",
+         "minimum": 0
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Text"
+       ],
+       "properties": {
+        "Text": {
+         "type": "string"
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Curve"
+       ],
+       "properties": {
+        "Curve": {
+         "type": "array",
+         "items": {
+          "type": "array",
+          "items": {
+           "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+         }
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "required": [
+        "Path"
+       ],
+       "properties": {
+        "Path": {
+         "$ref": "#/$defs/maskPath"
+        }
+       },
+       "additionalProperties": false
+      }
+     ]
+    },
+    "interp": {
+     "enum": [
+      "Linear",
+      "Hold",
+      "Bezier",
+      "AutoBezier",
+      "ContinuousBezier",
+      "EaseIn",
+      "EaseOut"
+     ],
+     "default": "Linear"
+    },
+    "out_influence": {
+     "type": "number",
+     "default": 0.3333333333333333
+    },
+    "in_influence": {
+     "type": "number",
+     "default": 0.3333333333333333
+    }
+   },
+   "additionalProperties": false
+  },
+  "label": {
+   "enum": [
+    "Violet",
+    "Iris",
+    "Caribbean",
+    "Lavender",
+    "Cerulean",
+    "Forest",
+    "Rose",
+    "Mango",
+    "Purple",
+    "Blue",
+    "Teal",
+    "Magenta",
+    "Tan",
+    "Green",
+    "Brown",
+    "Yellow"
+   ]
+  },
+  "interpolation": {
+   "enum": [
+    "Linear",
+    "Hold",
+    "Bezier",
+    "AutoBezier",
+    "ContinuousBezier",
+    "EaseIn",
+    "EaseOut"
+   ]
+  },
+  "project": {
+   "type": "object",
+   "required": [
+    "name",
+    "settings",
+    "root",
+    "items",
+    "next_id"
+   ],
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "settings": {
+     "$ref": "#/$defs/projectSettings"
+    },
+    "root": {
+     "$ref": "#/$defs/bin"
+    },
+    "items": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/projectItem"
+     },
+     "description": "Map of decimal item id (string key) to item. Ids are u64."
+    },
+    "next_id": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "Next id handed out. Must be greater than every id in use. Default for a new project: 1."
+    },
+    "luts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/lut"
+     },
+     "description": "Default empty. Omitted when empty."
+    },
+    "transcripts": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "object"
+     },
+     "description": "Media item id -> transcript. Default empty, omitted when empty."
+    },
+    "search_bins": {
+     "type": "array",
+     "items": {
+      "type": "object"
+     },
+     "description": "Schema v11. Default empty, omitted when empty."
+    },
+    "source_graphics": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "object"
+     },
+     "description": "Schema v12. Default empty, omitted when empty."
+    },
+    "narrations": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "object"
+     },
+     "description": "Schema v14. Default empty, omitted when empty."
+    },
+    "notes": {
+     "type": "string",
+     "default": "",
+     "description": "Schema v15. Omitted when empty."
+    }
+   },
+   "additionalProperties": true
+  },
+  "projectSettings": {
+   "type": "object",
+   "required": [
+    "renderer",
+    "video_display",
+    "audio_display_samples",
+    "default_still_duration",
+    "default_transition_duration_frames",
+    "default_audio_transition_duration"
+   ],
+   "properties": {
+    "renderer": {
+     "type": "string",
+     "default": "FilmCraft GPU Acceleration (wgpu)"
+    },
+    "video_display": {
+     "enum": [
+      "Timecode",
+      "Frames",
+      "Feet16",
+      "Feet35",
+      "AudioSamples",
+      "Seconds"
+     ],
+     "default": "Timecode"
+    },
+    "audio_display_samples": {
+     "type": "boolean",
+     "default": true
+    },
+    "default_still_duration": {
+     "type": "integer",
+     "description": "5 seconds. The editor uses the Timeline preference instead.",
+     "default": 1270080000000
+    },
+    "default_transition_duration_frames": {
+     "type": "integer",
+     "default": 24
+    },
+    "default_audio_transition_duration": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64.",
+     "default": 254016000000
+    },
+    "ingest": {
+     "$ref": "#/$defs/ingest",
+     "description": "Default: enabled false, action createProxies, destination null, preset empty."
+    },
+    "title_safe": {
+     "type": "array",
+     "items": {
+      "type": "number"
+     },
+     "minItems": 2,
+     "maxItems": 2,
+     "default": [
+      20,
+      20
+     ],
+     "description": "Horizontal, vertical percent."
+    },
+    "action_safe": {
+     "type": "array",
+     "items": {
+      "type": "number"
+     },
+     "minItems": 2,
+     "maxItems": 2,
+     "default": [
+      10,
+      10
+     ]
+    },
+    "capture_format": {
+     "type": "string",
+     "default": "DV"
+    },
+    "scratch": {
+     "$ref": "#/$defs/scratch"
+    }
+   },
+   "additionalProperties": false
+  },
+  "ingest": {
+   "type": "object",
+   "properties": {
+    "enabled": {
+     "type": "boolean",
+     "default": false
+    },
+    "action": {
+     "enum": [
+      "copy",
+      "transcode",
+      "createProxies",
+      "copyAndCreateProxies"
+     ],
+     "default": "createProxies"
+    },
+    "destination": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "default": null
+    },
+    "preset": {
+     "type": "string",
+     "default": ""
+    }
+   },
+   "additionalProperties": false
+  },
+  "scratch": {
+   "type": "object",
+   "properties": {
+    "captured": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "default": null
+    },
+    "videoPreviews": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "default": null
+    },
+    "audioPreviews": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "default": null
+    },
+    "autoSave": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "default": null
+    }
+   },
+   "additionalProperties": false
+  },
+  "bin": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "children"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "name": {
+     "type": "string"
+    },
+    "children": {
+     "type": "array",
+     "items": {
+      "oneOf": [
+       {
+        "type": "object",
+        "required": [
+         "Item"
+        ],
+        "properties": {
+         "Item": {
+          "type": "integer",
+          "minimum": 0
+         }
+        },
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "required": [
+         "Bin"
+        ],
+        "properties": {
+         "Bin": {
+          "$ref": "#/$defs/bin"
+         }
+        },
+        "additionalProperties": false
+       }
+      ]
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "projectItem": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "label",
+    "kind"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "name": {
+     "type": "string"
+    },
+    "label": {
+     "$ref": "#/$defs/label"
+    },
+    "kind": {
+     "$ref": "#/$defs/itemKind"
+    },
+    "metadata": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "string"
+     },
+     "default": {}
+    },
+    "created": {
+     "type": "integer",
+     "default": 0,
+     "description": "Import counter, not wall clock."
+    },
+    "split": {
+     "$ref": "#/$defs/splitMarks"
+    }
+   },
+   "additionalProperties": false
+  },
+  "itemKind": {
+   "oneOf": [
+    {
+     "type": "object",
+     "required": [
+      "Media"
+     ],
+     "properties": {
+      "Media": {
+       "$ref": "#/$defs/mediaClip"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Sequence"
+     ],
+     "properties": {
+      "Sequence": {
+       "$ref": "#/$defs/sequence"
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Subclip"
+     ],
+     "properties": {
+      "Subclip": {
+       "type": "object",
+       "required": [
+        "parent",
+        "range"
+       ],
+       "properties": {
+        "parent": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "range": {
+         "$ref": "#/$defs/timeRange"
+        },
+        "restrict_trims": {
+         "type": "boolean",
+         "default": false
+        }
+       }
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "AdjustmentLayer"
+     ],
+     "properties": {
+      "AdjustmentLayer": {
+       "type": "object",
+       "required": [
+        "width",
+        "height",
+        "rate",
+        "duration"
+       ],
+       "properties": {
+        "width": {
+         "type": "integer"
+        },
+        "height": {
+         "type": "integer"
+        },
+        "rate": {
+         "type": "object",
+         "required": [
+          "num",
+          "den"
+         ],
+         "properties": {
+          "num": {
+           "type": "integer"
+          },
+          "den": {
+           "type": "integer"
+          }
+         },
+         "additionalProperties": false,
+         "description": "Exact frames per second, num/den. Defaults: 24000/1001."
+        },
+        "duration": {
+         "type": "integer",
+         "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+        }
+       },
+       "additionalProperties": false
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Graphic"
+     ],
+     "properties": {
+      "Graphic": {
+       "type": "object",
+       "required": [
+        "width",
+        "height",
+        "rate"
+       ],
+       "properties": {
+        "width": {
+         "type": "integer"
+        },
+        "height": {
+         "type": "integer"
+        },
+        "rate": {
+         "type": "object",
+         "required": [
+          "num",
+          "den"
+         ],
+         "properties": {
+          "num": {
+           "type": "integer"
+          },
+          "den": {
+           "type": "integer"
+          }
+         },
+         "additionalProperties": false,
+         "description": "Exact frames per second, num/den. Defaults: 24000/1001."
+        }
+       },
+       "additionalProperties": false
+      }
+     },
+     "additionalProperties": false
+    }
+   ]
+  },
+  "mediaClip": {
+   "type": "object",
+   "required": [
+    "media",
+    "info",
+    "interpret",
+    "mark_in",
+    "mark_out",
+    "markers",
+    "offline",
+    "proxy"
+   ],
+   "properties": {
+    "media": {
+     "$ref": "#/$defs/mediaRef"
+    },
+    "info": {
+     "$ref": "#/$defs/mediaInfo"
+    },
+    "interpret": {
+     "$ref": "#/$defs/interpretation"
+    },
+    "mark_in": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "mark_out": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "markers": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/marker"
+     }
+    },
+    "offline": {
+     "type": "boolean",
+     "description": "Made offline on purpose. A missing file is detected at runtime and is not stored."
+    },
+    "proxy": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/mediaRef"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "identity": {
+     "type": "object",
+     "required": [
+      "size",
+      "fingerprint"
+     ],
+     "properties": {
+      "size": {
+       "type": "integer"
+      },
+      "fingerprint": {
+       "type": "string",
+       "pattern": "^[0-9a-fA-F]{16}$"
+      }
+     },
+     "description": "Optional. Omitted for generators and projects from before schema 6. Hex fingerprint of size + first MiB + last MiB."
+    }
+   },
+   "additionalProperties": false
+  },
+  "mediaRef": {
+   "oneOf": [
+    {
+     "type": "object",
+     "required": [
+      "File"
+     ],
+     "properties": {
+      "File": {
+       "type": "object",
+       "required": [
+        "path"
+       ],
+       "properties": {
+        "path": {
+         "type": "string"
+        }
+       },
+       "additionalProperties": false
+      }
+     },
+     "additionalProperties": false
+    },
+    {
+     "type": "object",
+     "required": [
+      "Generator"
+     ],
+     "properties": {
+      "Generator": {
+       "description": "BarsAndTone | BlackVideo | TransparentVideo | CountingLeader | {ColorMatte:{color:[r,g,b,a]}} | {Demo:<scene>} | {Tone:{hz,db}}"
+      }
+     },
+     "additionalProperties": false
+    }
+   ]
+  },
+  "mediaInfo": {
+   "type": "object",
+   "required": [
+    "name",
+    "kind",
+    "duration",
+    "video",
+    "audio_streams",
+    "container",
+    "start_timecode",
+    "file_size"
+   ],
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "Movie",
+      "AudioOnly",
+      "Still",
+      "ImageSequence",
+      "Synthetic"
+     ]
+    },
+    "duration": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "video": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/videoStream"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "audio_streams": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/audioStream"
+     },
+     "description": "Schema v13. Older files used a single `audio` object or null; both load as this array. Stream 0 is the primary stream."
+    },
+    "container": {
+     "type": "string"
+    },
+    "start_timecode": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "description": "First frame, in frames at video.frame_rate."
+    },
+    "file_size": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    }
+   },
+   "additionalProperties": false
+  },
+  "videoStream": {
+   "type": "object",
+   "required": [
+    "width",
+    "height",
+    "frame_rate",
+    "par",
+    "codec",
+    "pixel_format",
+    "color",
+    "has_alpha",
+    "bitrate"
+   ],
+   "properties": {
+    "width": {
+     "type": "integer"
+    },
+    "height": {
+     "type": "integer"
+    },
+    "frame_rate": {
+     "type": "object",
+     "required": [
+      "num",
+      "den"
+     ],
+     "properties": {
+      "num": {
+       "type": "integer"
+      },
+      "den": {
+       "type": "integer"
+      }
+     },
+     "additionalProperties": false,
+     "description": "Exact frames per second, num/den. Defaults: 24000/1001."
+    },
+    "par": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     },
+     "minItems": 2,
+     "maxItems": 2,
+     "description": "Pixel aspect, numerator then denominator. Square is [1, 1]."
+    },
+    "codec": {
+     "type": "string"
+    },
+    "pixel_format": {
+     "type": "string"
+    },
+    "color": {
+     "type": "object",
+     "required": [
+      "matrix",
+      "transfer",
+      "primaries",
+      "range"
+     ],
+     "properties": {
+      "matrix": {
+       "enum": [
+        "Bt601",
+        "Bt709",
+        "Bt2020Ncl"
+       ]
+      },
+      "transfer": {
+       "enum": [
+        "Bt709",
+        "Srgb",
+        "Linear",
+        "Pq",
+        "Hlg"
+       ]
+      },
+      "primaries": {
+       "enum": [
+        "Bt709",
+        "Bt601_625",
+        "Bt601_525",
+        "Bt2020",
+        "P3D65"
+       ]
+      },
+      "range": {
+       "enum": [
+        "Limited",
+        "Full"
+       ]
+      }
+     },
+     "additionalProperties": false
+    },
+    "has_alpha": {
+     "type": "boolean"
+    },
+    "bitrate": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "description": "Bits per second."
+    },
+    "hdr": {
+     "type": "object",
+     "properties": {
+      "masteringMaxNits": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "masteringMinNits": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "maxCll": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "maxFall": {
+       "type": [
+        "number",
+        "null"
+       ]
+      }
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "audioStream": {
+   "type": "object",
+   "required": [
+    "sample_rate",
+    "channels",
+    "codec",
+    "bits_per_sample"
+   ],
+   "properties": {
+    "sample_rate": {
+     "type": "integer"
+    },
+    "channels": {
+     "type": "integer"
+    },
+    "codec": {
+     "type": "string"
+    },
+    "bits_per_sample": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    }
+   },
+   "additionalProperties": false
+  },
+  "interpretation": {
+   "type": "object",
+   "required": [
+    "frame_rate",
+    "par",
+    "ignore_alpha",
+    "invert_alpha"
+   ],
+   "properties": {
+    "frame_rate": {
+     "anyOf": [
+      {
+       "type": "object",
+       "required": [
+        "num",
+        "den"
+       ],
+       "properties": {
+        "num": {
+         "type": "integer"
+        },
+        "den": {
+         "type": "integer"
+        }
+       },
+       "additionalProperties": false,
+       "description": "Exact frames per second, num/den. Defaults: 24000/1001."
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "par": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "type": "integer"
+       },
+       "minItems": 2,
+       "maxItems": 2
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "ignore_alpha": {
+     "type": "boolean",
+     "default": false
+    },
+    "invert_alpha": {
+     "type": "boolean",
+     "default": false
+    },
+    "color_space": {
+     "enum": [
+      "Rec709",
+      "Srgb",
+      "Rec2020",
+      "P3D65",
+      "Rec2100Pq",
+      "Rec2100Hlg",
+      "SLog3SGamut3Cine",
+      "SLog3SGamut3",
+      "VLogVGamut",
+      "CLog2CinemaGamut",
+      "CLog3CinemaGamut",
+      "LogC3Awg3",
+      "LogC4Awg4",
+      "AppleLog",
+      "DLogDGamut",
+      "FLogFGamut",
+      "FLog2FGamut",
+      "FLog2CFGamutC",
+      "Linear709"
+     ],
+     "description": "Optional Interpret Footage override."
+    },
+    "audio_channels": {
+     "type": "object",
+     "properties": {
+      "format": {
+       "enum": [
+        "Mono",
+        "Stereo",
+        "Surround51",
+        "Adaptive"
+       ],
+       "default": "Stereo"
+      },
+      "clips": {
+       "type": "array",
+       "items": {
+        "type": "array",
+        "items": {
+         "type": "integer"
+        }
+       }
+      }
+     },
+     "description": "Modify > Audio Channels. Optional."
+    }
+   },
+   "additionalProperties": false
+  },
+  "sequence": {
+   "type": "object",
+   "required": [
+    "settings",
+    "video_tracks",
+    "audio_tracks",
+    "markers",
+    "mark_in",
+    "mark_out",
+    "work_area",
+    "start_timecode"
+   ],
+   "properties": {
+    "settings": {
+     "$ref": "#/$defs/sequenceSettings"
+    },
+    "video_tracks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/track"
+     }
+    },
+    "audio_tracks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/track"
+     }
+    },
+    "markers": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/marker"
+     }
+    },
+    "mark_in": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "mark_out": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "work_area": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/timeRange"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "start_timecode": {
+     "type": "integer",
+     "description": "Frames. 0 is the default for a new sequence.",
+     "default": 0
+    },
+    "master_volume_db": {
+     "type": "number",
+     "default": 0
+    },
+    "master_effects": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/effectInstance"
+     },
+     "default": []
+    },
+    "master_mixer": {
+     "$ref": "#/$defs/mixer"
+    },
+    "submix_tracks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/track"
+     },
+     "default": []
+    },
+    "caption_tracks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/captionTrack"
+     },
+     "default": []
+    },
+    "multicam": {
+     "type": "object",
+     "description": "Schema v8. Omitted when the sequence is not a multi-camera source."
+    },
+    "merged": {
+     "type": "object",
+     "description": "Schema v8. Omitted unless this sequence is a merged clip."
+    },
+    "split": {
+     "$ref": "#/$defs/splitMarks"
+    }
+   },
+   "additionalProperties": false
+  },
+  "sequenceSettings": {
+   "type": "object",
+   "required": [
+    "width",
+    "height",
+    "frame_rate",
+    "par",
+    "sample_rate",
+    "drop_frame",
+    "preset",
+    "audio_master",
+    "preview_codec",
+    "max_bit_depth",
+    "max_render_quality",
+    "working_space",
+    "color"
+   ],
+   "properties": {
+    "width": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 32768,
+     "default": 1920
+    },
+    "height": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 32768,
+     "default": 1080
+    },
+    "frame_rate": {
+     "type": "object",
+     "required": [
+      "num",
+      "den"
+     ],
+     "properties": {
+      "num": {
+       "type": "integer"
+      },
+      "den": {
+       "type": "integer"
+      }
+     },
+     "additionalProperties": false,
+     "description": "Exact frames per second, num/den. Defaults: 24000/1001."
+    },
+    "par": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 1
+     },
+     "minItems": 2,
+     "maxItems": 2,
+     "default": [
+      1,
+      1
+     ]
+    },
+    "sample_rate": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 384000,
+     "default": 48000
+    },
+    "drop_frame": {
+     "type": "boolean",
+     "default": false
+    },
+    "preset": {
+     "type": "string",
+     "default": "HD 1080p 23.976"
+    },
+    "audio_master": {
+     "enum": [
+      "Mono",
+      "Stereo",
+      "Surround51",
+      "Adaptive"
+     ],
+     "default": "Stereo"
+    },
+    "preview_codec": {
+     "type": "string",
+     "default": "ProRes 422"
+    },
+    "max_bit_depth": {
+     "type": "boolean",
+     "default": false
+    },
+    "max_render_quality": {
+     "type": "boolean",
+     "default": false
+    },
+    "working_space": {
+     "type": "string",
+     "default": "Rec. 709",
+     "description": "Display label. `color` is authoritative."
+    },
+    "color": {
+     "type": "object",
+     "required": [
+      "working",
+      "wide_gamut",
+      "auto_tone_map"
+     ],
+     "properties": {
+      "working": {
+       "enum": [
+        "Rec709",
+        "Rec2100Pq",
+        "Rec2100Hlg"
+       ],
+       "default": "Rec709"
+      },
+      "wide_gamut": {
+       "type": "boolean",
+       "default": false
+      },
+      "auto_tone_map": {
+       "type": "boolean",
+       "default": true
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "additionalProperties": false
+  },
+  "track": {
+   "type": "object",
+   "required": [
+    "id",
+    "kind",
+    "name",
+    "items",
+    "transitions",
+    "locked",
+    "sync_lock",
+    "enabled",
+    "muted",
+    "solo",
+    "channels",
+    "volume_db",
+    "pan"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "kind": {
+     "enum": [
+      "Video",
+      "Audio"
+     ],
+     "default": "Video"
+    },
+    "name": {
+     "type": "string",
+     "description": "Engine names are `Video N` and `Audio N`. Commands also accept V1 / A1."
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/trackItem"
+     }
+    },
+    "transitions": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/transition"
+     }
+    },
+    "locked": {
+     "type": "boolean",
+     "default": false
+    },
+    "sync_lock": {
+     "type": "boolean",
+     "default": true
+    },
+    "enabled": {
+     "type": "boolean",
+     "default": true,
+     "description": "Video: eye. Audio: not muted by the eye toggle."
+    },
+    "muted": {
+     "type": "boolean",
+     "default": false
+    },
+    "solo": {
+     "type": "boolean",
+     "default": false
+    },
+    "channels": {
+     "enum": [
+      "Mono",
+      "Stereo",
+      "Surround51",
+      "Adaptive"
+     ],
+     "default": "Stereo"
+    },
+    "volume_db": {
+     "type": "number",
+     "default": 0
+    },
+    "pan": {
+     "type": "number",
+     "default": 0,
+     "description": "-100..100"
+    },
+    "effects": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/effectInstance"
+     },
+     "default": []
+    },
+    "mixer": {
+     "$ref": "#/$defs/mixer"
+    },
+    "label": {
+     "anyOf": [
+      {
+       "enum": [
+        "Violet",
+        "Iris",
+        "Caribbean",
+        "Lavender",
+        "Cerulean",
+        "Forest",
+        "Rose",
+        "Mango",
+        "Purple",
+        "Blue",
+        "Teal",
+        "Magenta",
+        "Tan",
+        "Green",
+        "Brown",
+        "Yellow"
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Optional. Omitted when the track has no colour."
+    }
+   },
+   "additionalProperties": false
+  },
+  "trackItem": {
+   "type": "object",
+   "required": [
+    "id",
+    "item",
+    "name",
+    "label",
+    "start",
+    "duration",
+    "source_in",
+    "speed",
+    "enabled",
+    "effects"
+   ],
+   "description": "A clip on a track. start/duration are sequence ticks. source_in is media time. Items on one track do not overlap.",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "item": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "name": {
+     "type": "string"
+    },
+    "label": {
+     "$ref": "#/$defs/label"
+    },
+    "start": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "duration": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "source_in": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "speed": {
+     "type": "number",
+     "description": "1.0 = 100%. Negative means reverse; `reverse` is the flag the editor uses."
+    },
+    "reverse": {
+     "type": "boolean",
+     "default": false
+    },
+    "enabled": {
+     "type": "boolean"
+    },
+    "link": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "default": null,
+     "description": "Shared link id of the video/audio partners."
+    },
+    "group": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "default": null
+    },
+    "effects": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/effectInstance"
+     }
+    },
+    "markers": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/marker"
+     },
+     "default": []
+    },
+    "gain_db": {
+     "type": "number",
+     "default": 0,
+     "description": "Clip gain, separate from the Volume effect."
+    },
+    "frame_hold": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "default": null
+    },
+    "scale_to_frame": {
+     "type": "boolean",
+     "default": false
+    },
+    "essential": {
+     "type": "object",
+     "description": "Essential Sound. Optional. kind is Dialogue|Music|SFX|Ambience."
+    },
+    "multicam": {
+     "type": "object"
+    },
+    "time_interpolation": {
+     "enum": [
+      "frameSampling",
+      "frameBlending",
+      "opticalFlow"
+     ],
+     "default": "frameSampling",
+     "description": "Omitted when frameSampling."
+    },
+    "hold_filters": {
+     "type": "boolean",
+     "default": false,
+     "description": "Omitted when false."
+    },
+    "field_options": {
+     "type": "object",
+     "properties": {
+      "reverseFieldDominance": {
+       "type": "boolean"
+      },
+      "processing": {
+       "enum": [
+        "none",
+        "alwaysDeinterlace",
+        "flickerRemoval"
+       ]
+      }
+     }
+    },
+    "source_channels": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     },
+     "description": "Audio source channels, 0-based. Omitted when empty (first two channels)."
+    },
+    "audio_stream": {
+     "type": "integer",
+     "minimum": 0,
+     "default": 0,
+     "description": "Schema v13. Omitted when 0."
+    },
+    "graphic": {
+     "$ref": "#/$defs/graphicMeta"
+    }
+   },
+   "additionalProperties": false
+  },
+  "transition": {
+   "type": "object",
+   "required": [
+    "id",
+    "effect",
+    "start",
+    "duration",
+    "from",
+    "to",
+    "align"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "effect": {
+     "$ref": "#/$defs/effectInstance"
+    },
+    "start": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "duration": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "from": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "description": "Outgoing clip. Null = fade in from nothing."
+    },
+    "to": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "description": "Incoming clip. Null = fade out to nothing."
+    },
+    "align": {
+     "enum": [
+      "CenterAtCut",
+      "StartAtCut",
+      "EndAtCut"
+     ],
+     "default": "CenterAtCut"
+    },
+    "reverse": {
+     "type": "boolean",
+     "default": false
+    }
+   },
+   "additionalProperties": false
+  },
+  "effectInstance": {
+   "type": "object",
+   "required": [
+    "effect",
+    "enabled",
+    "params"
+   ],
+   "properties": {
+    "effect": {
+     "type": "string",
+     "description": "Stable effect id. See effectCatalog. Video clips carry intrinsic motion, opacity and time_remap. Audio clips carry volume, channel_volume and panner. Text is graphic_text. Shapes are graphic_shape."
+    },
+    "enabled": {
+     "type": "boolean",
+     "default": true
+    },
+    "params": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/param"
+     }
+    },
+    "masks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/mask"
+     },
+     "description": "Schema v7. Omitted when empty."
+    },
+    "post_fader": {
+     "type": "boolean",
+     "default": false,
+     "description": "Track/mix inserts. Omitted when false."
+    },
+    "essential": {
+     "type": "boolean",
+     "default": false,
+     "description": "Omitted when false."
+    },
+    "layer": {
+     "$ref": "#/$defs/layerExtra"
+    }
+   },
+   "additionalProperties": false
+  },
+  "effectCatalog": {
+   "description": "Every effect and transition id registered in FilmCraft 0.15. Not a constraint: a project may name an id the renderer does not implement, and the file still opens.",
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "kind"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "Video",
+       "Audio",
+       "VideoTransition",
+       "AudioTransition"
+      ]
+     }
+    }
+   },
+   "const": [
+    {
+     "id": "amplify",
+     "name": "Amplify",
+     "kind": "Audio"
+    },
+    {
+     "id": "analog_delay",
+     "name": "Analog Delay",
+     "kind": "Audio"
+    },
+    {
+     "id": "balance_a",
+     "name": "Balance",
+     "kind": "Audio"
+    },
+    {
+     "id": "bandpass",
+     "name": "Bandpass",
+     "kind": "Audio"
+    },
+    {
+     "id": "bass",
+     "name": "Bass",
+     "kind": "Audio"
+    },
+    {
+     "id": "binauralizer",
+     "name": "Binauralizer - Ambisonics",
+     "kind": "Audio"
+    },
+    {
+     "id": "channel_mixer_a",
+     "name": "Channel Mixer",
+     "kind": "Audio"
+    },
+    {
+     "id": "channel_volume",
+     "name": "Channel Volume",
+     "kind": "Audio"
+    },
+    {
+     "id": "channel_volume_a",
+     "name": "Channel Volume",
+     "kind": "Audio"
+    },
+    {
+     "id": "chorus_flanger",
+     "name": "Chorus/Flanger",
+     "kind": "Audio"
+    },
+    {
+     "id": "convolution_reverb",
+     "name": "Convolution Reverb",
+     "kind": "Audio"
+    },
+    {
+     "id": "declicker",
+     "name": "Automatic Click Remover",
+     "kind": "Audio"
+    },
+    {
+     "id": "deesser",
+     "name": "DeEsser",
+     "kind": "Audio"
+    },
+    {
+     "id": "dehummer",
+     "name": "DeHummer",
+     "kind": "Audio"
+    },
+    {
+     "id": "delay",
+     "name": "Delay",
+     "kind": "Audio"
+    },
+    {
+     "id": "denoise",
+     "name": "DeNoise",
+     "kind": "Audio"
+    },
+    {
+     "id": "dereverb",
+     "name": "DeReverb",
+     "kind": "Audio"
+    },
+    {
+     "id": "distortion",
+     "name": "Distortion",
+     "kind": "Audio"
+    },
+    {
+     "id": "dynamics",
+     "name": "Dynamics Processing",
+     "kind": "Audio"
+    },
+    {
+     "id": "dynamics_rack",
+     "name": "Dynamics",
+     "kind": "Audio"
+    },
+    {
+     "id": "fft_filter",
+     "name": "FFT Filter",
+     "kind": "Audio"
+    },
+    {
+     "id": "fill_left",
+     "name": "Fill Left with Right",
+     "kind": "Audio"
+    },
+    {
+     "id": "fill_right",
+     "name": "Fill Right with Left",
+     "kind": "Audio"
+    },
+    {
+     "id": "flanger",
+     "name": "Flanger",
+     "kind": "Audio"
+    },
+    {
+     "id": "graphic_eq",
+     "name": "Graphic Equalizer (10 Bands)",
+     "kind": "Audio"
+    },
+    {
+     "id": "graphic_eq_20",
+     "name": "Graphic Equalizer (20 Bands)",
+     "kind": "Audio"
+    },
+    {
+     "id": "graphic_eq_30",
+     "name": "Graphic Equalizer (30 Bands)",
+     "kind": "Audio"
+    },
+    {
+     "id": "guitar_suite",
+     "name": "GuitarSuite",
+     "kind": "Audio"
+    },
+    {
+     "id": "hard_limiter",
+     "name": "Hard Limiter",
+     "kind": "Audio"
+    },
+    {
+     "id": "highpass",
+     "name": "Highpass",
+     "kind": "Audio"
+    },
+    {
+     "id": "invert_a",
+     "name": "Invert",
+     "kind": "Audio"
+    },
+    {
+     "id": "loudness_radar",
+     "name": "Loudness Meter",
+     "kind": "Audio"
+    },
+    {
+     "id": "lowpass",
+     "name": "Lowpass",
+     "kind": "Audio"
+    },
+    {
+     "id": "mastering",
+     "name": "Mastering",
+     "kind": "Audio"
+    },
+    {
+     "id": "multiband_compressor",
+     "name": "Multiband Compressor",
+     "kind": "Audio"
+    },
+    {
+     "id": "multitap_delay",
+     "name": "Multitap Delay",
+     "kind": "Audio"
+    },
+    {
+     "id": "mute",
+     "name": "Mute",
+     "kind": "Audio"
+    },
+    {
+     "id": "notch",
+     "name": "Notch Filter",
+     "kind": "Audio"
+    },
+    {
+     "id": "panner",
+     "name": "Panner",
+     "kind": "Audio"
+    },
+    {
+     "id": "panner_ambisonics",
+     "name": "Panner - Ambisonics",
+     "kind": "Audio"
+    },
+    {
+     "id": "parametric_eq",
+     "name": "Parametric Equalizer",
+     "kind": "Audio"
+    },
+    {
+     "id": "phaser",
+     "name": "Phaser",
+     "kind": "Audio"
+    },
+    {
+     "id": "pitch_shifter",
+     "name": "Pitch Shifter",
+     "kind": "Audio"
+    },
+    {
+     "id": "scientific_filter",
+     "name": "Scientific Filter",
+     "kind": "Audio"
+    },
+    {
+     "id": "simple_eq",
+     "name": "Simple Parametric EQ",
+     "kind": "Audio"
+    },
+    {
+     "id": "simple_notch",
+     "name": "Simple Notch Filter",
+     "kind": "Audio"
+    },
+    {
+     "id": "single_band_compressor",
+     "name": "Single-band Compressor",
+     "kind": "Audio"
+    },
+    {
+     "id": "speech_enhance",
+     "name": "Enhance Speech",
+     "kind": "Audio"
+    },
+    {
+     "id": "stereo_expander",
+     "name": "Stereo Expander",
+     "kind": "Audio"
+    },
+    {
+     "id": "stereo_width",
+     "name": "Stereo Width",
+     "kind": "Audio"
+    },
+    {
+     "id": "studio_reverb",
+     "name": "Studio Reverb",
+     "kind": "Audio"
+    },
+    {
+     "id": "surround_reverb",
+     "name": "Surround Reverb",
+     "kind": "Audio"
+    },
+    {
+     "id": "swap_channels",
+     "name": "Swap Channels",
+     "kind": "Audio"
+    },
+    {
+     "id": "treble",
+     "name": "Treble",
+     "kind": "Audio"
+    },
+    {
+     "id": "tube_compressor",
+     "name": "Tube-modeled Compressor",
+     "kind": "Audio"
+    },
+    {
+     "id": "vocal_enhancer",
+     "name": "Vocal Enhancer",
+     "kind": "Audio"
+    },
+    {
+     "id": "volume",
+     "name": "Volume",
+     "kind": "Audio"
+    },
+    {
+     "id": "volume_a",
+     "name": "Volume",
+     "kind": "Audio"
+    },
+    {
+     "id": "constant_gain",
+     "name": "Constant Gain",
+     "kind": "AudioTransition"
+    },
+    {
+     "id": "constant_power",
+     "name": "Constant Power",
+     "kind": "AudioTransition"
+    },
+    {
+     "id": "exponential_fade",
+     "name": "Exponential Fade",
+     "kind": "AudioTransition"
+    },
+    {
+     "id": "alpha_adjust",
+     "name": "Alpha Adjust",
+     "kind": "Video"
+    },
+    {
+     "id": "alpha_glow",
+     "name": "Alpha Glow",
+     "kind": "Video"
+    },
+    {
+     "id": "asc_cdl",
+     "name": "ASC CDL",
+     "kind": "Video"
+    },
+    {
+     "id": "auto_align",
+     "name": "Auto Align",
+     "kind": "Video"
+    },
+    {
+     "id": "auto_reframe",
+     "name": "Auto Reframe",
+     "kind": "Video"
+    },
+    {
+     "id": "basic_3d",
+     "name": "Basic 3D",
+     "kind": "Video"
+    },
+    {
+     "id": "bevel_alpha",
+     "name": "Bevel Alpha",
+     "kind": "Video"
+    },
+    {
+     "id": "black_white",
+     "name": "Black & White",
+     "kind": "Video"
+    },
+    {
+     "id": "block_dissolve",
+     "name": "Block Dissolve",
+     "kind": "Video"
+    },
+    {
+     "id": "bokeh_blur",
+     "name": "Bokeh Blur",
+     "kind": "Video"
+    },
+    {
+     "id": "brightness_contrast",
+     "name": "Brightness & Contrast",
+     "kind": "Video"
+    },
+    {
+     "id": "brush_strokes",
+     "name": "Brush Strokes",
+     "kind": "Video"
+    },
+    {
+     "id": "camera_blur",
+     "name": "Camera Blur",
+     "kind": "Video"
+    },
+    {
+     "id": "camera_shake",
+     "name": "Camera Shake",
+     "kind": "Video"
+    },
+    {
+     "id": "cell_pattern",
+     "name": "Cell Pattern",
+     "kind": "Video"
+    },
+    {
+     "id": "change_to_color",
+     "name": "Change to Color",
+     "kind": "Video"
+    },
+    {
+     "id": "channel_blur",
+     "name": "Channel Blur",
+     "kind": "Video"
+    },
+    {
+     "id": "channel_mix",
+     "name": "Channel Mix",
+     "kind": "Video"
+    },
+    {
+     "id": "checkerboard",
+     "name": "Checkerboard",
+     "kind": "Video"
+    },
+    {
+     "id": "cineon_converter",
+     "name": "Cineon Converter",
+     "kind": "Video"
+    },
+    {
+     "id": "circle",
+     "name": "Circle",
+     "kind": "Video"
+    },
+    {
+     "id": "clip_name",
+     "name": "Clip Name",
+     "kind": "Video"
+    },
+    {
+     "id": "clone",
+     "name": "Clone",
+     "kind": "Video"
+    },
+    {
+     "id": "color_balance",
+     "name": "Color Balance",
+     "kind": "Video"
+    },
+    {
+     "id": "color_emboss",
+     "name": "Color Emboss",
+     "kind": "Video"
+    },
+    {
+     "id": "color_key",
+     "name": "Color Key",
+     "kind": "Video"
+    },
+    {
+     "id": "color_pass",
+     "name": "Color Pass",
+     "kind": "Video"
+    },
+    {
+     "id": "color_replace",
+     "name": "Color Replace",
+     "kind": "Video"
+    },
+    {
+     "id": "compound_blur",
+     "name": "Compound Blur",
+     "kind": "Video"
+    },
+    {
+     "id": "corner_pin",
+     "name": "Corner Pin",
+     "kind": "Video"
+    },
+    {
+     "id": "crop",
+     "name": "Crop",
+     "kind": "Video"
+    },
+    {
+     "id": "directional_blur",
+     "name": "Directional Blur",
+     "kind": "Video"
+    },
+    {
+     "id": "directional_blur_legacy",
+     "name": "Directional Blur (Legacy)",
+     "kind": "Video"
+    },
+    {
+     "id": "drop_shadow",
+     "name": "Drop Shadow",
+     "kind": "Video"
+    },
+    {
+     "id": "echo",
+     "name": "Echo",
+     "kind": "Video"
+    },
+    {
+     "id": "echo_glow",
+     "name": "Echo Glow",
+     "kind": "Video"
+    },
+    {
+     "id": "edge_feather",
+     "name": "Edge Feather",
+     "kind": "Video"
+    },
+    {
+     "id": "edge_glow",
+     "name": "Edge Glow",
+     "kind": "Video"
+    },
+    {
+     "id": "ellipse",
+     "name": "Ellipse",
+     "kind": "Video"
+    },
+    {
+     "id": "emboss",
+     "name": "Emboss",
+     "kind": "Video"
+    },
+    {
+     "id": "extract",
+     "name": "Extract",
+     "kind": "Video"
+    },
+    {
+     "id": "find_edges",
+     "name": "Find Edges",
+     "kind": "Video"
+    },
+    {
+     "id": "focus_blur",
+     "name": "Focus Blur",
+     "kind": "Video"
+    },
+    {
+     "id": "four_color_gradient",
+     "name": "4-Color Gradient",
+     "kind": "Video"
+    },
+    {
+     "id": "gamma_correction",
+     "name": "Gamma Correction",
+     "kind": "Video"
+    },
+    {
+     "id": "gaussian_blur",
+     "name": "Gaussian Blur",
+     "kind": "Video"
+    },
+    {
+     "id": "gaussian_blur_legacy",
+     "name": "Gaussian Blur (Legacy)",
+     "kind": "Video"
+    },
+    {
+     "id": "glint",
+     "name": "Glint",
+     "kind": "Video"
+    },
+    {
+     "id": "gradient",
+     "name": "Gradient",
+     "kind": "Video"
+    },
+    {
+     "id": "gradient_wipe_legacy",
+     "name": "Gradient Wipe (Legacy)",
+     "kind": "Video"
+    },
+    {
+     "id": "graphic_shape",
+     "name": "Shape",
+     "kind": "Video"
+    },
+    {
+     "id": "graphic_text",
+     "name": "Text",
+     "kind": "Video"
+    },
+    {
+     "id": "grid",
+     "name": "Grid",
+     "kind": "Video"
+    },
+    {
+     "id": "grow",
+     "name": "Grow",
+     "kind": "Video"
+    },
+    {
+     "id": "horizontal_flip",
+     "name": "Horizontal Flip",
+     "kind": "Video"
+    },
+    {
+     "id": "invert",
+     "name": "Invert",
+     "kind": "Video"
+    },
+    {
+     "id": "leave_color",
+     "name": "Leave Color",
+     "kind": "Video"
+    },
+    {
+     "id": "lens_distortion",
+     "name": "Lens Distortion",
+     "kind": "Video"
+    },
+    {
+     "id": "lens_flare",
+     "name": "Lens Flare",
+     "kind": "Video"
+    },
+    {
+     "id": "levels",
+     "name": "Levels",
+     "kind": "Video"
+    },
+    {
+     "id": "light_leaks",
+     "name": "Light Leaks",
+     "kind": "Video"
+    },
+    {
+     "id": "lighting_effects",
+     "name": "Lighting Effects",
+     "kind": "Video"
+    },
+    {
+     "id": "lightning",
+     "name": "Lightning",
+     "kind": "Video"
+    },
+    {
+     "id": "linear_wipe_legacy",
+     "name": "Linear Wipe (Legacy)",
+     "kind": "Video"
+    },
+    {
+     "id": "logo_cutout",
+     "name": "Logo Cutout",
+     "kind": "Video"
+    },
+    {
+     "id": "long_shadow",
+     "name": "Long Shadow",
+     "kind": "Video"
+    },
+    {
+     "id": "luma_key",
+     "name": "Luma Key",
+     "kind": "Video"
+    },
+    {
+     "id": "lumetri",
+     "name": "Lumetri Color",
+     "kind": "Video"
+    },
+    {
+     "id": "magnify",
+     "name": "Magnify",
+     "kind": "Video"
+    },
+    {
+     "id": "magnify_legacy",
+     "name": "Magnify (Legacy)",
+     "kind": "Video"
+    },
+    {
+     "id": "median",
+     "name": "Median",
+     "kind": "Video"
+    },
+    {
+     "id": "metadata_burnin",
+     "name": "Metadata & Timecode Burn-in",
+     "kind": "Video"
+    },
+    {
+     "id": "mirror",
+     "name": "Mirror",
+     "kind": "Video"
+    },
+    {
+     "id": "mosaic",
+     "name": "Mosaic",
+     "kind": "Video"
+    },
+    {
+     "id": "mosaic_legacy",
+     "name": "Mosaic (Legacy)",
+     "kind": "Video"
+    },
+    {
+     "id": "motion",
+     "name": "Motion",
+     "kind": "Video"
+    },
+    {
+     "id": "move",
+     "name": "Move",
+     "kind": "Video"
+    },
+    {
+     "id": "noise",
+     "name": "Noise",
+     "kind": "Video"
+    },
+    {
+     "id": "noise_legacy",
+     "name": "Noise (Legacy)",
+     "kind": "Video"
+    },
+    {
+     "id": "offset",
+     "name": "Offset",
+     "kind": "Video"
+    },
+    {
+     "id": "opacity",
+     "name": "Opacity",
+     "kind": "Video"
+    },
+    {
+     "id": "paint_bucket",
+     "name": "Paint Bucket",
+     "kind": "Video"
+    },
+    {
+     "id": "posterize",
+     "name": "Posterize",
+     "kind": "Video"
+    },
+    {
+     "id": "posterize_time",
+     "name": "Posterize Time",
+     "kind": "Video"
+    },
+    {
+     "id": "proc_amp",
+     "name": "ProcAmp",
+     "kind": "Video"
+    },
+    {
+     "id": "ramp",
+     "name": "Ramp",
+     "kind": "Video"
+    },
+    {
+     "id": "reduce_interlace_flicker",
+     "name": "Reduce Interlace Flicker",
+     "kind": "Video"
+    },
+    {
+     "id": "replicate",
+     "name": "Replicate",
+     "kind": "Video"
+    },
+    {
+     "id": "rgb_split",
+     "name": "RGB Split",
+     "kind": "Video"
+    },
+    {
+     "id": "rotate_3d",
+     "name": "3D Rotate",
+     "kind": "Video"
+    },
+    {
+     "id": "roughen_edges",
+     "name": "Roughen Edges",
+     "kind": "Video"
+    },
+    {
+     "id": "rounded_crop",
+     "name": "Rounded Crop",
+     "kind": "Video"
+    },
+    {
+     "id": "sharpen",
+     "name": "Sharpen",
+     "kind": "Video"
+    },
+    {
+     "id": "shrink",
+     "name": "Shrink",
+     "kind": "Video"
+    },
+    {
+     "id": "simple_text",
+     "name": "Simple Text",
+     "kind": "Video"
+    },
+    {
+     "id": "spacer",
+     "name": "Spacer",
+     "kind": "Video"
+    },
+    {
+     "id": "spherize",
+     "name": "Spherize",
+     "kind": "Video"
+    },
+    {
+     "id": "spin",
+     "name": "Spin",
+     "kind": "Video"
+    },
+    {
+     "id": "strobe",
+     "name": "Strobe Light",
+     "kind": "Video"
+    },
+    {
+     "id": "stroke",
+     "name": "Stroke",
+     "kind": "Video"
+    },
+    {
+     "id": "three_way_color",
+     "name": "Three-Way Color Corrector",
+     "kind": "Video"
+    },
+    {
+     "id": "time_remap",
+     "name": "Time Remapping",
+     "kind": "Video"
+    },
+    {
+     "id": "timecode",
+     "name": "Timecode",
+     "kind": "Video"
+    },
+    {
+     "id": "tint",
+     "name": "Tint",
+     "kind": "Video"
+    },
+    {
+     "id": "track_matte",
+     "name": "Track Matte Key",
+     "kind": "Video"
+    },
+    {
+     "id": "transform",
+     "name": "Transform",
+     "kind": "Video"
+    },
+    {
+     "id": "turbulent_displace",
+     "name": "Turbulent Displace",
+     "kind": "Video"
+    },
+    {
+     "id": "twirl",
+     "name": "Twirl",
+     "kind": "Video"
+    },
+    {
+     "id": "twirl_legacy",
+     "name": "Twirl (Legacy)",
+     "kind": "Video"
+    },
+    {
+     "id": "ultra_key",
+     "name": "Ultra Key",
+     "kind": "Video"
+    },
+    {
+     "id": "unsharp_mask",
+     "name": "Unsharp Mask",
+     "kind": "Video"
+    },
+    {
+     "id": "vertical_flip",
+     "name": "Vertical Flip",
+     "kind": "Video"
+    },
+    {
+     "id": "video_limiter",
+     "name": "Video Limiter",
+     "kind": "Video"
+    },
+    {
+     "id": "vignette",
+     "name": "Vignette",
+     "kind": "Video"
+    },
+    {
+     "id": "volumetric_rays",
+     "name": "Volumetric Rays",
+     "kind": "Video"
+    },
+    {
+     "id": "warp_stabilizer",
+     "name": "Warp Stabilizer",
+     "kind": "Video"
+    },
+    {
+     "id": "wave_warp",
+     "name": "Wave Warp",
+     "kind": "Video"
+    },
+    {
+     "id": "wiggle",
+     "name": "Wiggle",
+     "kind": "Video"
+    },
+    {
+     "id": "wonder_glow",
+     "name": "Wonder Glow",
+     "kind": "Video"
+    },
+    {
+     "id": "write_on",
+     "name": "Write-on",
+     "kind": "Video"
+    },
+    {
+     "id": "additive_dissolve",
+     "name": "Additive Dissolve",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "additive_dissolve_legacy",
+     "name": "Additive Dissolve (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "band_slide",
+     "name": "Band Slide",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "barn_doors",
+     "name": "Barn Doors",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "block_motion",
+     "name": "Block Motion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "blur_dissolve",
+     "name": "Blur Dissolve",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "burn_alpha",
+     "name": "Burn Alpha",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "burn_chroma",
+     "name": "Burn Chroma",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "center_split",
+     "name": "Center Split",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "chaos",
+     "name": "Chaos",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "checker_wipe",
+     "name": "Checker Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "chroma_leak",
+     "name": "Chroma Leak",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "clock_wipe",
+     "name": "Clock Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "clock_wipe_legacy",
+     "name": "Clock Wipe (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "cross_dissolve",
+     "name": "Cross Dissolve",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "cross_dissolve_legacy",
+     "name": "Cross Dissolve (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "cross_zoom",
+     "name": "Cross Zoom",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "cross_zoom_legacy",
+     "name": "Cross Zoom (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "cube_spin",
+     "name": "Cube Spin",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "dip_to_black",
+     "name": "Dip to Black",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "dip_to_black_legacy",
+     "name": "Dip to Black (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "dip_to_color",
+     "name": "Dip to Color",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "dip_to_white",
+     "name": "Dip to White",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "dip_to_white_legacy",
+     "name": "Dip to White (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "directional_blur_transition",
+     "name": "Directional Blur",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "earthquake",
+     "name": "Earthquake",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "film_dissolve",
+     "name": "Film Dissolve",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "film_dissolve_legacy",
+     "name": "Film Dissolve (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "film_roll",
+     "name": "Film Roll",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "flare",
+     "name": "Flare",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "flash",
+     "name": "Flash",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "flicker",
+     "name": "Flicker",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "flip_motion",
+     "name": "Flip Motion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "flip_over",
+     "name": "Flip Over",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "fold_motion",
+     "name": "Fold Motion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "frame",
+     "name": "Frame",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "glass",
+     "name": "Glass",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "glitch",
+     "name": "Glitch",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "glow",
+     "name": "Glow",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "gradient_wipe",
+     "name": "Gradient Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "grunge",
+     "name": "Grunge",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "inset",
+     "name": "Inset",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "iris_box",
+     "name": "Iris Box",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "iris_cross",
+     "name": "Iris Cross",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "iris_diamond",
+     "name": "Iris Diamond",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "iris_round",
+     "name": "Iris Round",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "kaleidoscope",
+     "name": "Kaleidoscope",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "lens_blur",
+     "name": "Lens Blur",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "light_leak",
+     "name": "Light Leak",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "light_sweep",
+     "name": "Light Sweep",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "linear_wipe",
+     "name": "Linear Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "liquid_distortion",
+     "name": "Liquid Distortion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "louver",
+     "name": "Louver",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "luma_fade",
+     "name": "Luma Fade",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "mirror_transition",
+     "name": "Mirror",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "morph_cut",
+     "name": "Morph Cut",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "mosaic_transition",
+     "name": "Mosaic",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "motion_camera",
+     "name": "Motion Camera",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "motion_tween",
+     "name": "Motion Tween",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "neon_wipe",
+     "name": "Neon Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "non_additive_dissolve",
+     "name": "Non-Additive Dissolve",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "page_peel",
+     "name": "Page Peel",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "page_turn",
+     "name": "Page Turn",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "panel_wipe",
+     "name": "Panel Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "phosphor",
+     "name": "Phosphor",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "plateau_wipe",
+     "name": "Plateau Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "pop_motion",
+     "name": "Pop Motion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "pull_motion",
+     "name": "Pull Motion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "push",
+     "name": "Push",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "push_legacy",
+     "name": "Push (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "radial_blur",
+     "name": "Radial Blur",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "radial_wipe",
+     "name": "Radial Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "radial_wipe_legacy",
+     "name": "Radial Wipe (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "ray",
+     "name": "Ray",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "roll",
+     "name": "Roll",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "roll_3d",
+     "name": "3D Roll",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "shape_dissolve",
+     "name": "Shape Dissolve",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "shape_flow",
+     "name": "Shape Flow",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "slice",
+     "name": "Slice",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "slide",
+     "name": "Slide",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "slide_legacy",
+     "name": "Slide (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "soft_wipe",
+     "name": "Soft Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "solarize",
+     "name": "Solarize",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "spin_3d",
+     "name": "3D Spin",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "spin_motion",
+     "name": "Spin Motion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "spinback_3d",
+     "name": "3D Spinback",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "split",
+     "name": "Split",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "split_legacy",
+     "name": "Split (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "spring_motion",
+     "name": "Spring Motion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "star_wipe",
+     "name": "Star Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "stretch",
+     "name": "Stretch",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "stretch_wipe",
+     "name": "Stretch Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "stripe",
+     "name": "Stripe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "text_animator",
+     "name": "Text Animator",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "travel_motion",
+     "name": "Travel Motion",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "tv_power",
+     "name": "TV Power",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "typewriter",
+     "name": "Typewriter",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "venetian_blinds",
+     "name": "Venetian Blinds",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vhs_damage",
+     "name": "VHS Damage",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vr_chroma_leaks",
+     "name": "VR Chroma Leaks",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vr_gradient_wipe",
+     "name": "VR Gradient Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vr_iris_wipe",
+     "name": "VR Iris Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vr_light_leaks",
+     "name": "VR Light Leaks",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vr_light_rays",
+     "name": "VR Light Rays",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vr_mobius_zoom",
+     "name": "VR Mobius Zoom",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vr_random_blocks",
+     "name": "VR Random Blocks",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "vr_spherical_blur",
+     "name": "VR Spherical Blur",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "wave",
+     "name": "Wave",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "whip",
+     "name": "Whip",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "whip_legacy",
+     "name": "Whip (Legacy)",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "wipe",
+     "name": "Wipe",
+     "kind": "VideoTransition"
+    },
+    {
+     "id": "zoom_blur",
+     "name": "Zoom Blur",
+     "kind": "VideoTransition"
+    }
+   ]
+  },
+  "textStyle": {
+   "description": "graphic_text parameters (Effect Controls). Choice indexes: align Left=0 Center=1 Right=2 Justify=3; caps Normal=0 All Caps=1 Small Caps=2; fill_kind Solid=0 Linear Gradient=1; stroke type Outer=0 Center=1 Inner=2. Defaults in parentheses.",
+   "type": "object",
+   "properties": {
+    "text": {
+     "type": "string"
+    },
+    "font": {
+     "default": "Inter"
+    },
+    "font_style": {
+     "default": "Regular"
+    },
+    "size": {
+     "default": 100
+    },
+    "align": {
+     "default": 0
+    },
+    "tracking": {
+     "default": 0
+    },
+    "kerning": {
+     "default": true
+    },
+    "ligatures": {
+     "default": true
+    },
+    "leading": {
+     "default": 0
+    },
+    "baseline_shift": {
+     "default": 0
+    },
+    "faux_bold": {
+     "default": false
+    },
+    "faux_italic": {
+     "default": false
+    },
+    "caps": {
+     "default": 0
+    },
+    "underline": {
+     "default": false
+    },
+    "strikethrough": {
+     "default": false
+    },
+    "box_width": {
+     "default": 0
+    },
+    "box_height": {
+     "default": 0
+    },
+    "vertical": {
+     "default": false
+    },
+    "fill": {
+     "default": true
+    },
+    "fill_color": {
+     "default": [
+      1,
+      1,
+      1,
+      1
+     ]
+    },
+    "fill_kind": {
+     "default": 0
+    },
+    "stroke": {
+     "default": false
+    },
+    "stroke_width": {
+     "default": 4
+    },
+    "shadow": {
+     "default": false
+    },
+    "background": {
+     "default": false
+    },
+    "position": {
+     "description": "Layer position. null coordinate = auto."
+    },
+    "anchor": {},
+    "scale": {
+     "default": 100
+    },
+    "rotation": {
+     "default": 0
+    },
+    "opacity": {
+     "default": 100
+    }
+   }
+  },
+  "mask": {
+   "type": "object",
+   "required": [
+    "name",
+    "path",
+    "feather",
+    "opacity",
+    "expansion"
+   ],
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "path": {
+     "$ref": "#/$defs/param"
+    },
+    "feather": {
+     "$ref": "#/$defs/param"
+    },
+    "opacity": {
+     "$ref": "#/$defs/param"
+    },
+    "expansion": {
+     "$ref": "#/$defs/param"
+    },
+    "inverted": {
+     "type": "boolean",
+     "default": false
+    },
+    "mode": {
+     "enum": [
+      "None",
+      "Add",
+      "Subtract",
+      "Intersect",
+      "Lighten",
+      "Darken",
+      "Difference"
+     ],
+     "default": "Add"
+    },
+    "track_method": {
+     "enum": [
+      "Position",
+      "PositionRotation",
+      "PositionScaleRotation"
+     ],
+     "default": "PositionScaleRotation"
+    }
+   },
+   "additionalProperties": false
+  },
+  "maskPath": {
+   "type": "object",
+   "description": "Closed cubic Bezier in clip pixels. Vertices are {p, t_in, t_out} with Vec2 points.",
+   "additionalProperties": true
+  },
+  "marker": {
+   "type": "object",
+   "required": [
+    "id",
+    "start",
+    "duration",
+    "name",
+    "comment",
+    "kind",
+    "color"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "start": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "duration": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "name": {
+     "type": "string"
+    },
+    "comment": {
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "Comment",
+      "Chapter",
+      "Segmentation",
+      "WebLink",
+      "FlashCue"
+     ],
+     "default": "Comment"
+    },
+    "color": {
+     "$ref": "#/$defs/label"
+    }
+   },
+   "additionalProperties": false
+  },
+  "captionTrack": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "format",
+    "enabled",
+    "locked",
+    "captions"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "name": {
+     "type": "string"
+    },
+    "format": {
+     "enum": [
+      "Subtitle",
+      "Cea608",
+      "Cea708",
+      "Teletext"
+     ],
+     "default": "Subtitle"
+    },
+    "language": {
+     "type": "string",
+     "default": "en"
+    },
+    "style": {
+     "$ref": "#/$defs/captionStyle"
+    },
+    "enabled": {
+     "type": "boolean",
+     "default": true
+    },
+    "locked": {
+     "type": "boolean",
+     "default": false
+    },
+    "sync_lock": {
+     "type": "boolean",
+     "default": true
+    },
+    "captions": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/caption"
+     }
+    },
+    "vtt_blocks": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "default": []
+    }
+   },
+   "additionalProperties": false
+  },
+  "caption": {
+   "type": "object",
+   "required": [
+    "id",
+    "start",
+    "duration",
+    "text"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "start": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "duration": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "text": {
+     "type": "string",
+     "description": "Lines separated by newline. <i>/<b>/<u> and WebVTT voice spans are kept."
+    },
+    "speaker": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "cue_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "settings": {
+     "type": "string",
+     "default": ""
+    }
+   },
+   "additionalProperties": false
+  },
+  "captionStyle": {
+   "type": "object",
+   "description": "Track style. All fields default: font Inter, size 54, color white, background on, background_color [0,0,0,191], align Center, anchor Bottom, margin 0.08, line_spacing 1.25, outline 0, outline_color black, font_style SemiBold.",
+   "properties": {
+    "font": {
+     "type": "string",
+     "default": "Inter"
+    },
+    "size": {
+     "type": "number",
+     "default": 54
+    },
+    "color": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     },
+     "minItems": 4,
+     "maxItems": 4,
+     "default": [
+      255,
+      255,
+      255,
+      255
+     ]
+    },
+    "background": {
+     "type": "boolean",
+     "default": true
+    },
+    "background_color": {
+     "type": "array",
+     "default": [
+      0,
+      0,
+      0,
+      191
+     ]
+    },
+    "align": {
+     "enum": [
+      "Left",
+      "Center",
+      "Right"
+     ],
+     "default": "Center"
+    },
+    "anchor": {
+     "enum": [
+      "Top",
+      "Middle",
+      "Bottom"
+     ],
+     "default": "Bottom"
+    },
+    "margin": {
+     "type": "number",
+     "default": 0.08
+    },
+    "line_spacing": {
+     "type": "number",
+     "default": 1.25
+    },
+    "outline": {
+     "type": "number",
+     "default": 0
+    },
+    "outline_color": {
+     "type": "array",
+     "default": [
+      0,
+      0,
+      0,
+      255
+     ]
+    },
+    "font_style": {
+     "type": "string",
+     "default": "SemiBold"
+    }
+   },
+   "additionalProperties": false
+  },
+  "mixer": {
+   "type": "object",
+   "description": "Default: mode Read, lanes omitted, sends omitted, output null, record_arm false, solo_safe false, input_map Stereo.",
+   "properties": {
+    "mode": {
+     "enum": [
+      "Off",
+      "Read",
+      "Latch",
+      "Touch",
+      "Write"
+     ],
+     "default": "Read"
+    },
+    "lanes": {
+     "type": "object",
+     "additionalProperties": {
+      "$ref": "#/$defs/param"
+     },
+     "description": "Keys: volume, pan, mute, send.<i>.level, pan51.x, pan51.y, pan51.center, pan51.lfe. Keyframe time is sequence time."
+    },
+    "sends": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "target",
+       "level_db"
+      ],
+      "properties": {
+       "target": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "level_db": {
+        "type": "number",
+        "default": 0
+       },
+       "pan": {
+        "type": "number",
+        "default": 0
+       },
+       "pre_fader": {
+        "type": "boolean",
+        "default": false
+       },
+       "muted": {
+        "type": "boolean",
+        "default": false
+       }
+      }
+     }
+    },
+    "output": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "default": null
+    },
+    "record_arm": {
+     "type": "boolean",
+     "default": false
+    },
+    "solo_safe": {
+     "type": "boolean",
+     "default": false
+    },
+    "input_map": {
+     "enum": [
+      "Stereo",
+      "Left",
+      "Right",
+      "Swap",
+      "Mono"
+     ],
+     "default": "Stereo"
+    }
+   },
+   "additionalProperties": false
+  },
+  "timeRange": {
+   "type": "object",
+   "required": [
+    "start",
+    "duration"
+   ],
+   "properties": {
+    "start": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "duration": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    }
+   },
+   "additionalProperties": false
+  },
+  "splitMarks": {
+   "type": "object",
+   "properties": {
+    "videoIn": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "videoOut": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "audioIn": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "audioOut": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    }
+   },
+   "description": "camelCase. Omitted when every side is empty."
+  },
+  "graphicMeta": {
+   "type": "object",
+   "properties": {
+    "roll": {
+     "type": "object",
+     "properties": {
+      "mode": {
+       "enum": [
+        "Off",
+        "Roll",
+        "CrawlLeft",
+        "CrawlRight"
+       ],
+       "default": "Off"
+      },
+      "start_off_screen": {
+       "type": "boolean"
+      },
+      "end_off_screen": {
+       "type": "boolean"
+      },
+      "preroll": {
+       "type": "integer",
+       "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+      },
+      "ease_in": {
+       "type": "integer",
+       "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+      },
+      "ease_out": {
+       "type": "integer",
+       "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+      },
+      "postroll": {
+       "type": "integer",
+       "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+      }
+     }
+    },
+    "intro": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "outro": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "design_in": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "design_duration": {
+     "type": "integer",
+     "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+    },
+    "template": {
+     "type": [
+      "object",
+      "null"
+     ]
+    }
+   },
+   "description": "Schema v12. Optional on the clip."
+  },
+  "layerExtra": {
+   "type": "object",
+   "properties": {
+    "uid": {
+     "type": "integer"
+    },
+    "runs": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "description": "start/end character indexes plus camelCase CharStyle overrides (font, fontStyle, size, fill, fauxBold, fauxItalic, underline, strikethrough, tracking, baselineShift, caps)."
+     }
+    },
+    "pin": {
+     "type": "object",
+     "properties": {
+      "to": {
+       "description": "Frame, or {Layer: uid}"
+      },
+      "left": {
+       "type": "boolean"
+      },
+      "top": {
+       "type": "boolean"
+      },
+      "right": {
+       "type": "boolean"
+      },
+      "bottom": {
+       "type": "boolean"
+      },
+      "offsets": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       },
+       "minItems": 4,
+       "maxItems": 4
+      }
+     }
+    }
+   },
+   "description": "Schema v12, on graphic layers. Omitted when empty."
+  },
+  "lut": {
+   "type": "object",
+   "required": [
+    "id",
+    "name",
+    "format",
+    "text"
+   ],
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "source_path": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "format": {
+     "type": "string",
+     "description": "cube or 3dl"
+    },
+    "text": {
+     "type": "string"
+    }
+   }
+  },
+  "projectView": {
+   "type": "object",
+   "properties": {
+    "open_sequences": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "minimum": 0
+     },
+     "default": []
+    },
+    "active_sequence": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "sequences": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "object",
+      "required": [
+       "pps",
+       "scroll",
+       "video_track_h",
+       "audio_track_h"
+      ],
+      "properties": {
+       "pps": {
+        "type": "number"
+       },
+       "scroll": {
+        "type": "number"
+       },
+       "v_scroll": {
+        "type": "number",
+        "default": 0
+       },
+       "a_scroll": {
+        "type": "number",
+        "default": 0
+       },
+       "video_track_h": {
+        "type": "number"
+       },
+       "audio_track_h": {
+        "type": "number"
+       }
+      }
+     }
+    },
+    "playheads": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer",
+      "description": "Time in ticks. 254016000000 ticks = 1 second. serde transparent i64."
+     },
+     "description": "Omitted when empty."
+    }
+   }
+  },
+  "audioTypes": {
+   "enum": [
+    "Dialogue",
+    "Music",
+    "SFX",
+    "Ambience"
+   ]
+  },
+  "clipKinds": {
+   "description": "Item kinds that can sit on a timeline: Media (movie, audio, still, image sequence, synthetic), Sequence (nest), Subclip, AdjustmentLayer, Graphic (text and shapes live on the clip as effects)."
+  }
+ }
+}
