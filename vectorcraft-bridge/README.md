@@ -2,6 +2,13 @@
 
 `vc` 讓指令走 VectorCraft 的控制埠（預設 `127.0.0.1:7979`，沒有 token）。繪圖、上色、效果和匯出都是軟體裡的指令，開著的文件會立刻更新。
 
+先另開視窗啟動軟體，再在這個資料夾執行 `python vc`：
+
+```text
+vectorcraft --control 7979
+python vc new Poster -p C:\art\poster.vectorcraft --width 1280 --height 720 --units Pixels
+```
+
 控制埠沒開，或加上 `--offline`，才依 `schema/vectorcraft.schema.json` 改 `.vectorcraft`。指令若被軟體拒絕，不會改去寫檔。每個指令的參數、回傳和範例在 [API.md](API.md)。
 
 ```text

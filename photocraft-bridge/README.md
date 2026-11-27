@@ -2,10 +2,11 @@
 
 `pc` 讓指令走 PhotoCraft 的控制埠（預設 `127.0.0.1:7878`）。每次連線要先送 64 個十六進位字元的 token。繪圖、圖層、調整和匯出都是軟體裡的指令，開著的文件會立刻更新。
 
-先啟動：
+先另開視窗啟動軟體，再在這個資料夾執行 `python pc`：
 
 ```text
-photocraft --control 7878 --control-token-file C:\private\photocraft-control.token --automation-read-root C:\art --automation-write-root C:\art
+photocraft --control 7878 --control-token-file %TEMP%\photocraft.tok --automation-read-root C:\art --automation-write-root C:\art
+python pc new Poster -p C:\art\poster.pcraft --width 1920 --height 1080
 ```
 
 token 用 `--token`、`--token-file`，或環境變數 `PHOTOCRAFT_CONTROL_TOKEN`、`PHOTOCRAFT_CONTROL_TOKEN_FILE`。沒有指定時，`pc` 會讀 `%TEMP%\photocraft-control.token` 或 `%TEMP%\photocraft.tok`。

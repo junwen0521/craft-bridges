@@ -2,6 +2,13 @@
 
 `fc` 讓指令走 FilmCraft 的控制埠（預設 `127.0.0.1:9877`）。剪輯、轉場、文字、字幕、音量和匯出都是引擎指令，開著的時間軸會立刻更新。
 
+先另開視窗啟動軟體，再在這個資料夾執行 `python fc`：
+
+```text
+filmcraft --control 9877 --control-token-file %TEMP%\filmcraft.tok
+python fc new Demo -p C:\cut\demo.fcproj --fps 24
+```
+
 控制埠沒開，或加上 `--offline`，才依 `schema/fcproj.schema.json` 改 `.fcproj`。指令若被軟體拒絕，不會改去寫檔。每個指令的參數、回傳和範例在 [API.md](API.md)。
 
 ```text
